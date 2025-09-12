@@ -1,0 +1,38 @@
+name: Rust Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build project
+        run: cargo build --release
+
+      - name: Upload add_csv_catalog binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: add_csv_catalog-${{ runner.os }}
+          path: target/release/add_csv_catalog
+
+      - name: Upload add_fits_catalog binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: add_fits_catalog-${{ runner.os }}
+          path: target/release/add_fits_catalog
