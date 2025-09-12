@@ -16,6 +16,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: sudo apt-get install libcfitsio-dev
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
