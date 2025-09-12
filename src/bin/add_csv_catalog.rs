@@ -25,11 +25,7 @@ struct Cli {
         default_value = "boom"
     )]
     db: String,
-    #[arg(
-        long,
-        help = "Number of worker tasks to spawn.",
-        default_value_t = 4
-    )]
+    #[arg(long, help = "Number of worker tasks to spawn.", default_value_t = 4)]
     num_workers: usize,
     #[arg(long, help = "Batch size for inserts.", default_value_t = 10000)]
     batch_size: usize,

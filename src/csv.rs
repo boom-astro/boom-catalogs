@@ -1,12 +1,11 @@
 use crate::processor::Processor;
 use anyhow::Result;
 use csv::ReaderBuilder;
+use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use indicatif::ProgressBar;
-
 
 // CSV files can be very large and have no mean to get their length
 // without reading the whole file. To provide a progress bar we
@@ -84,14 +83,18 @@ where
 
     let progress_bar = ProgressBar::new(num_rows as u64)
         .with_message("Processing CSV file")
-        .with_style(indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} {msg} {wide_bar} {pos}/{len} ({eta})")
-            .unwrap());
+        .with_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{spinner:.green} {msg} {wide_bar} {pos}/{len} ({eta})")
+                .unwrap(),
+        );
 
     for result in rdr.deserialize::<T>() {
         let record = result?;
         match s.send(record).await {
-            Ok(_) => { progress_bar.inc(1); }
+            Ok(_) => {
+                progress_bar.inc(1);
+            }
             Err(e) => {
                 eprintln!("Failed to send record to workers: {}", e);
                 break;

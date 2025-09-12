@@ -1,9 +1,9 @@
 use crate::processor::Processor;
 use anyhow::Result;
 use fitsio::{FitsFile, hdu::HduInfo};
+use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use indicatif::ProgressBar;
 
 pub trait FitsRowBatch {
     fn read_batch(
@@ -58,9 +58,11 @@ where
 
     let progress_bar = ProgressBar::new(num_rows as u64)
         .with_message("Processing FITS file")
-        .with_style(indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} {msg} {wide_bar} {pos}/{len} ({eta})")
-            .unwrap());
+        .with_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("{spinner:.green} {msg} {wide_bar} {pos}/{len} ({eta})")
+                .unwrap(),
+        );
 
     for chunk_start in (0..num_rows).step_by(batch_size) {
         let chunk_end = (chunk_start + batch_size).min(num_rows);
@@ -68,7 +70,9 @@ where
         let rows = T::read_batch(&tlb_hdu, &mut fptr, range)?;
         for row in rows {
             match s.send(row).await {
-                Ok(_) => { progress_bar.inc(1); }
+                Ok(_) => {
+                    progress_bar.inc(1);
+                }
                 Err(e) => {
                     eprintln!("Failed to send record to workers: {}", e);
                     break;
