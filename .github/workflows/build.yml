@@ -38,9 +38,6 @@ jobs:
 
       - name: Configure cache
         uses: Swatinem/rust-cache@v2
-        with:
-          cache-name: cargo-cache
-          target: ${{ matrix.target }}
 
       - name: Build project
         run: cargo build --release --target ${{ matrix.target }}
