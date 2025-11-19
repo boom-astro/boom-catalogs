@@ -65,38 +65,6 @@ fn open_table<P: AsRef<Path>>(path: P) -> std::io::Result<TableReader<BufReader<
     Ok(TableReader::new(BufReader::new(file)))
 }
 
-// fn main() -> std::io::Result<()> {
-//     let reader = open_table("/home/theodlz/work/zvar/data/vsx.dat")?;
-
-//     println!("Parsing data rows...\n");
-
-//     let mut success_count = 0;
-//     let mut error_count = 0;
-
-//     for result in reader.rows() {
-//         match result {
-//             Ok(obj) => {
-//                 success_count += 1;
-//                 println!("✅ Parsed: {:?}", obj);
-//                 println!();
-//             }
-//             Err(e) => {
-//                 error_count += 1;
-//                 eprintln!("❌ Error: {}", e);
-//                 eprintln!();
-//                 break;
-//             }
-//         }
-//     }
-
-//     println!("✅ Successfully parsed: {} rows", success_count);
-//     if error_count > 0 {
-//         println!("❌ Failed to parse: {} rows", error_count);
-//     }
-
-//     Ok(())
-// }
-
 fn estimate_lines_in_file(path: &str) -> Result<usize> {
     // get the metadata to find the file size
     let metadata = std::fs::metadata(path)?;
@@ -164,22 +132,6 @@ where
                 .unwrap(),
         );
 
-    // for chunk_start in (0..num_rows).step_by(batch_size) {
-    //     let chunk_end = (chunk_start + batch_size).min(num_rows);
-    //     let range = chunk_start..chunk_end;
-    //     let rows = T::read_batch(&tlb_hdu, &mut fptr, range)?;
-    //     for row in rows {
-    //         match s.send(row).await {
-    //             Ok(_) => {
-    //                 progress_bar.inc(1);
-    //             }
-    //             Err(e) => {
-    //                 eprintln!("Failed to send record to workers: {}", e);
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
     let mut success_count = 0;
     let mut error_count = 0;
 
