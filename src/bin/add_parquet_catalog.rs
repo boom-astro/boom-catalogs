@@ -1,12 +1,12 @@
 use anyhow::Result;
-use boom_catalogs::csv::process_csv;
-use boom_catalogs::types::{CsvCatalogs, Gaia, LSSG, Ned};
+use boom_catalogs::parquet::process_parquet;
+use boom_catalogs::types::{GaiaPS1Xmatch, ParquetCatalogs};
 use clap::Parser;
 
 #[derive(Parser)]
 struct Cli {
     #[arg(help = "Type name of the struct to deserialize each value into")]
-    type_name: CsvCatalogs,
+    type_name: ParquetCatalogs,
     #[arg(help = "MongoDB collection name.", env = "MONGODB_COLLECTION")]
     collection: String,
     #[arg(help = "Path to the CSV file to ingest.")]
@@ -32,7 +32,7 @@ struct Cli {
     #[arg(
         long,
         help = "Channel capacity for buffering.",
-        default_value_t = 1000000
+        default_value_t = 100000
     )]
     channel_capacity: usize,
     #[arg(
@@ -79,36 +79,8 @@ async fn main() -> Result<()> {
         let collection = args.collection.clone();
         let path = path.clone();
         let result = match args.type_name {
-            CsvCatalogs::Ned => {
-                process_csv::<Ned>(
-                    uri,
-                    db,
-                    collection,
-                    path.clone(),
-                    args.num_workers,
-                    args.batch_size,
-                    args.channel_capacity,
-                    args.drop_existing_collection,
-                    args.init_indexes,
-                )
-                .await
-            }
-            CsvCatalogs::LSSG => {
-                process_csv::<LSSG>(
-                    uri,
-                    db,
-                    collection,
-                    path.clone(),
-                    args.num_workers,
-                    args.batch_size,
-                    args.channel_capacity,
-                    args.drop_existing_collection,
-                    args.init_indexes,
-                )
-                .await
-            }
-            CsvCatalogs::Gaia => {
-                process_csv::<Gaia>(
+            ParquetCatalogs::GaiaPS1Xmatch => {
+                process_parquet::<GaiaPS1Xmatch>(
                     uri,
                     db,
                     collection,

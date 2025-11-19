@@ -1,12 +1,12 @@
 use anyhow::Result;
-use boom_catalogs::fits::process_fits;
-use boom_catalogs::types::{FitsCatalogs, Ned};
+use boom_catalogs::ascii::process_ascii;
+use boom_catalogs::types::{AsciiCatalogs, VSX};
 use clap::Parser;
 
 #[derive(Parser)]
 struct Cli {
     #[arg(help = "Type name of the struct to deserialize each value into")]
-    type_name: FitsCatalogs,
+    type_name: AsciiCatalogs,
     #[arg(help = "MongoDB collection name.", env = "MONGODB_COLLECTION")]
     collection: String,
     #[arg(help = "Path to the CSV file to ingest.")]
@@ -54,8 +54,8 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.type_name {
-        FitsCatalogs::Ned => {
-            process_fits::<Ned>(
+        AsciiCatalogs::VSX => {
+            process_ascii::<VSX>(
                 args.uri,
                 args.db,
                 args.collection,

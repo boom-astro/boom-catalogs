@@ -1,4 +1,4 @@
-use crate::processor::Processor;
+use crate::{processor::Processor, types::HasCoordinates};
 use anyhow::Result;
 use fitsio::{FitsFile, hdu::HduInfo};
 use indicatif::ProgressBar;
@@ -23,9 +23,11 @@ pub async fn process_fits<T>(
     num_workers: usize,
     batch_size: usize,
     channel_capacity: usize,
+    drop_existing_collection: bool,
+    init_indexes: bool,
 ) -> Result<()>
 where
-    T: Serialize + Send + 'static + for<'de> Deserialize<'de> + FitsRowBatch,
+    T: Serialize + Send + 'static + for<'de> Deserialize<'de> + FitsRowBatch + HasCoordinates,
 {
     // Check that the FITS path exists
     if !Path::new(&fits_path).exists() {
@@ -36,13 +38,15 @@ where
         anyhow::bail!("FITS file must have .fits or .fit extension: {}", fits_path);
     }
 
-    let processor = Processor::new(
+    let processor = Processor::new::<T>(
         mongodb_uri,
         db_name,
         collection_name,
         num_workers,
         batch_size,
         channel_capacity,
+        drop_existing_collection,
+        init_indexes,
     )
     .await?;
     let (s, workers) = processor.init_workers();

@@ -1,24 +1,27 @@
-use crate::db::{create_index, from_uri};
+use crate::{
+    db::{create_index, from_uri},
+    types::HasCoordinates,
+};
 use anyhow::Result;
 use mongodb::bson::{Document, doc};
 use serde::Serialize;
 
-fn to_document<T: Serialize>(source: T) -> Result<Document> {
+fn to_document<T: Serialize>(source: T, with_coordinates: bool) -> Result<Document> {
     let mut doc = mongodb::bson::to_document(&source).unwrap();
-    if let (Some(ra), Some(dec)) = (doc.get_f64("ra").ok(), doc.get_f64("dec").ok()) {
-        doc.insert(
-            "coordinates",
-            doc! {
-                "radec_geojson": {
-                    "type": "Point",
-                    "coordinates": [ra - 180.0, dec],
-                }
-            },
-        );
-        Ok(doc)
-    } else {
-        Err(anyhow::anyhow!("Missing ra or dec"))
+    if with_coordinates {
+        if let (Some(ra), Some(dec)) = (doc.get_f64("ra").ok(), doc.get_f64("dec").ok()) {
+            doc.insert(
+                "coordinates",
+                doc! {
+                    "radec_geojson": {
+                        "type": "Point",
+                        "coordinates": [ra - 180.0, dec],
+                    }
+                },
+            );
+        }
     }
+    Ok(doc)
 }
 
 async fn worker<T>(
@@ -28,6 +31,7 @@ async fn worker<T>(
     db_name: &str,
     collection_name: &str,
     batch_size: usize,
+    with_coordinates: bool,
 ) -> Result<usize>
 where
     T: Serialize,
@@ -39,7 +43,7 @@ where
     let mut total_processed = 0;
 
     while let Ok(record) = receiver.recv().await {
-        let doc = to_document(record)?;
+        let doc = to_document(record, with_coordinates)?;
         docs.push(doc);
 
         if docs.len() >= batch_size {
@@ -57,12 +61,15 @@ where
     }
 
     if !docs.is_empty() {
-        match collection.insert_many(&docs).await {
+        let opts = mongodb::options::InsertManyOptions::builder()
+            .ordered(false)
+            .build();
+        match collection.insert_many(&docs).with_options(opts).await {
             Ok(_) => {
                 total_processed += docs.len();
             }
-            Err(e) => {
-                eprintln!("Worker {}: Error in final insert: {}", worker_id, e);
+            Err(_e) => {
+                eprintln!("Worker {}: Error in final insert", worker_id);
             }
         }
     }
@@ -79,25 +86,33 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub async fn new(
+    pub async fn new<T>(
         mongodb_uri: String,
         db_name: String,
         collection_name: String,
         num_workers: usize,
         batch_size: usize,
         channel_capacity: usize,
-    ) -> Result<Self> {
+        drop_existing_collection: bool,
+        init_indexes: bool,
+    ) -> Result<Self>
+    where
+        T: HasCoordinates,
+    {
         // Create collection and index
         let db = from_uri(&mongodb_uri, &db_name).await?;
         let collection = db.collection::<Document>(&collection_name);
-        // Drop collection if exists (DEBUG)
-        collection.drop().await?;
-        create_index(
-            &collection,
-            doc! {"coordinates.radec_geojson": "2dsphere"},
-            false,
-        )
-        .await?;
+        if drop_existing_collection {
+            collection.drop().await?;
+        }
+        if init_indexes && T::has_coordinates() {
+            create_index(
+                &collection,
+                doc! {"coordinates.radec_geojson": "2dsphere"},
+                false,
+            )
+            .await?;
+        }
 
         Ok(Self {
             mongodb_uri,
@@ -117,7 +132,7 @@ impl Processor {
         Vec<tokio::task::JoinHandle<Result<usize>>>,
     )
     where
-        T: Serialize + Send + 'static,
+        T: Serialize + Send + 'static + HasCoordinates,
     {
         let (s, r) = async_channel::bounded(self.channel_capacity);
         let mut workers = Vec::new();
@@ -135,6 +150,7 @@ impl Processor {
                     &db_name,
                     &collection_name,
                     batch_size,
+                    T::has_coordinates(),
                 )
                 .await
             });
