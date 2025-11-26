@@ -1,12 +1,4 @@
 """Script to download NED LVS."""
-# /// script
-# requires-python = ">=3.13"
-# dependencies = [
-#     "requests",
-#     "tqdm",
-# ]
-# ///
-
 import requests
 from tqdm import tqdm
 import os

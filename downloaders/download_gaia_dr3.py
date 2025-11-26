@@ -1,12 +1,4 @@
 """Script to download all Gaia DR3 source CSV files in parallel."""
-# /// script
-# requires-python = ">=3.13"
-# dependencies = [
-#     "requests",
-#     "tqdm",
-# ]
-# ///
-
 import requests
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count

@@ -1,21 +1,10 @@
 """Script to download all catWISE 2020 files in parallel."""
-# /// script
-# requires-python = ">=3.13"
-# dependencies = [
-#     "requests",
-#     "tqdm",
-#     "pandas",
-#     "pyarrow",
-# ]
-# ///
-
 import requests
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 import os
 import argparse
 import pandas as pd
-import pyarrow as pa
 from io import StringIO
 import gzip
 
