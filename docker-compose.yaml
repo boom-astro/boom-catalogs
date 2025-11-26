@@ -1,0 +1,14 @@
+# networks:
+#   boom:
+#     external: true
+
+services:
+  catalog-ingestor:
+    image: boom-astro/boom-catalogs:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # networks:
+    #   - boom
+    volumes:
+      - ${PWD}/data:/data
