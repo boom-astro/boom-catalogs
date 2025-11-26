@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::parquet::process_parquet;
-use boom_catalogs::types::{GaiaPS1Xmatch, ParquetCatalogs};
+use boom_catalogs::types::{GaiaPS1Xmatch, CatWISE2020, ParquetCatalogs};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -55,14 +55,16 @@ async fn main() -> Result<()> {
 
     // path could be a dir or a file
     let paths = if std::fs::metadata(&args.path)?.is_dir() {
+        // we need to look recusively for files, as the parquet files could be in subdirs
         let mut dir_paths = Vec::new();
-        for entry in std::fs::read_dir(&args.path)? {
+        for entry in walkdir::WalkDir::new(&args.path) {
             let entry = entry?;
             let path = entry.path();
-            // if the file path ends with .csv or .csv.gz, add it to the list
-            if let Some(ext) = path.extension() {
-                if ext == "csv" || ext == "gz" {
-                    dir_paths.push(path.to_string_lossy().to_string());
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "parquet" {
+                        dir_paths.push(path.to_string_lossy().to_string());
+                    }
                 }
             }
         }
@@ -81,6 +83,20 @@ async fn main() -> Result<()> {
         let result = match args.type_name {
             ParquetCatalogs::GaiaPS1Xmatch => {
                 process_parquet::<GaiaPS1Xmatch>(
+                    uri,
+                    db,
+                    collection,
+                    path.clone(),
+                    args.num_workers,
+                    args.batch_size,
+                    args.channel_capacity,
+                    args.drop_existing_collection,
+                    args.init_indexes,
+                )
+                .await
+            }
+            ParquetCatalogs::CatWISE2020 => {
+                process_parquet::<CatWISE2020>(
                     uri,
                     db,
                     collection,

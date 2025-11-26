@@ -91,6 +91,7 @@ impl HasCoordinates for LSSG {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GaiaPS1Xmatch {
+    #[serde(rename(serialize = "_id"))]
     pub source_id: i64,              // this is the Gaia source_id
     pub original_ext_source_id: i64, // this is the original PanSTARRs psid
     pub score: f64,
@@ -348,6 +349,151 @@ impl HasCoordinates for Ned {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CatWISE2020 {
+    #[serde(rename(serialize = "_id"))]
+    pub source_id: String,
+    pub source_name: String,
+    pub ra: f64,
+    pub dec: f64,
+    pub sigra: f64,
+    pub sigdec: f64,
+    pub w1mpro: Option<f64>,
+    pub w2mpro: Option<f64>,
+    pub w1sigmpro: Option<f64>,
+    pub w2sigmpro: Option<f64>,
+    pub w1rchi2: Option<f64>,
+    pub w2rchi2: Option<f64>,
+    pub pmra: f64,
+    pub pmdec: f64,
+    pub sigpmra: f64,
+    pub sigpmdec: f64,
+    pub unwise_objid: String,
+}
+
+impl ParquetRowBatch for CatWISE2020 {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<CatWISE2020>> {
+        let source_id_series = df.column("source_id")?;
+        let source_name_series = df.column("source_name")?;
+        let ra_series = df.column("ra")?;
+        let dec_series = df.column("dec")?;
+        let sigra_series = df.column("sigra")?;
+        let sigdec_series = df.column("sigdec")?;
+        let w1mpro_series = df.column("w1mpro")?;
+        let w2mpro_series = df.column("w2mpro")?;
+        let w1sigmpro_series = df.column("w1sigmpro")?;
+        let w2sigmpro_series = df.column("w2sigmpro")?;
+        let w1rchi2_series = df.column("w1rchi2")?;
+        let w2rchi2_series = df.column("w2rchi2")?;
+        let pmra_series = df.column("PMRA")?;
+        let pmdec_series = df.column("PMDec")?;
+        let sigpmra_series = df.column("sigPMRA")?;
+        let sigpmdec_series = df.column("sigPMDec")?;
+        let unwise_objid_series = df.column("unwise_objid")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            let source_id = source_id_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing source_id at row {}", i))?
+                .to_string();
+            let source_name = source_name_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing source_name at row {}", i))?
+                .to_string();
+            let ra = ra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing ra at row {}", i))?;
+            let dec = dec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
+            let sigra = sigra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigra at row {}", i))?;
+            let sigdec = sigdec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigdec at row {}", i))?;
+            let w1mpro = match w1mpro_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let w2mpro = match w2mpro_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let w1sigmpro = match w1sigmpro_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let w2sigmpro = match w2sigmpro_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let w1rchi2 = match w1rchi2_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let w2rchi2 = match w2rchi2_series.f64()?.get(i) {
+                Some(v) => Some(v),
+                None => None,
+            };
+            let pmra = pmra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing pmra at row {}", i))?;
+            let pmdec = pmdec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing pmdec at row {}", i))?;
+            let sigpmra = sigpmra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigpmra at row {}", i))?;
+            let sigpmdec = sigpmdec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigpmdec at row {}", i))?;
+            let unwise_objid = unwise_objid_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing unwise_objid at row {}", i))?
+                .to_string();
+            results.push(CatWISE2020 {
+                source_id,
+                source_name,
+                ra,
+                dec,
+                sigra,
+                sigdec,
+                w1mpro,
+                w2mpro,
+                w1sigmpro,
+                w2sigmpro,
+                w1rchi2,
+                w2rchi2,
+                pmra,
+                pmdec,
+                sigpmra,
+                sigpmdec,
+                unwise_objid,
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for CatWISE2020 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
@@ -366,6 +512,7 @@ pub enum CsvCatalogs {
 #[serde(rename_all = "kebab-case")]
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
+    CatWISE2020,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
