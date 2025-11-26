@@ -92,7 +92,7 @@ impl HasCoordinates for LSSG {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GaiaPS1Xmatch {
     #[serde(rename(serialize = "_id"))]
-    pub source_id: i64,              // this is the Gaia source_id
+    pub source_id: i64, // this is the Gaia source_id
     pub original_ext_source_id: i64, // this is the original PanSTARRs psid
     pub score: f64,
 }

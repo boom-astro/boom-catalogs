@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::parquet::process_parquet;
-use boom_catalogs::types::{GaiaPS1Xmatch, CatWISE2020, ParquetCatalogs};
+use boom_catalogs::types::{CatWISE2020, GaiaPS1Xmatch, ParquetCatalogs};
 use clap::Parser;
 
 #[derive(Parser)]
