@@ -134,7 +134,7 @@ def download_file(arguments):
 
             data_lines = lines[data_start_idx + 4:]
             data_str = '\n'.join([line.strip() for line in data_lines if line.strip() != ''])
-            df = pd.read_csv(StringIO(data_str), names=column_names, dtype=dtype_map, na_values=['NULL', 'null', 'NaN', 'nan', ''], sep='\\s+')
+            df = pd.read_csv(StringIO(data_str), names=column_names, dtype=dtype_map, na_values=['NULL', 'null', 'NaN', 'nan', 'n', ''], sep='\\s+')
             df.to_parquet(parquet_path, index=False)
             os.remove(output_path)
         except Exception as e:
