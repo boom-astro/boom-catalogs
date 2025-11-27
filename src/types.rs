@@ -4,6 +4,7 @@ use anyhow::Result;
 use fitsio::FitsFile;
 use mongodb::bson::doc;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, skip_serializing_none};
 
 // Helper to parse optional fields
 fn parse_optional<T: std::str::FromStr>(s: &str) -> Option<T> {
@@ -185,6 +186,8 @@ impl HasCoordinates for Gaia {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Ned {
     #[serde(rename(serialize = "_id"))]
@@ -192,8 +195,73 @@ pub struct Ned {
     ra: f64,
     dec: f64,
     objtype: String,
-    z: f64,
-    z_unc: f64,
+    z: Option<f64>,
+    z_unc: Option<f64>,
+    z_tech: String,
+    z_qual: bool,
+    z_refcode: String,
+    ebv: Option<f64>,
+    m_star: Option<f64>,
+    m_star_unc: Option<f64>,
+    ml_ratio: Option<f64>,
+}
+
+// convert NaN, min overflow, max overflow, infinity to None
+fn float_nullable(value: f64) -> Option<f64> {
+    if value.is_nan() || value.is_infinite() || value <= f64::MIN || value >= f64::MAX {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+impl FitsRowBatch for Ned {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<Ned>> {
+        let objname_col: Vec<String> = hdu.read_col_range(fptr, "objname", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "ra", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "dec", &range)?;
+        let objtype_col: Vec<String> = hdu.read_col_range(fptr, "objtype", &range)?;
+        let z_col: Vec<f64> = hdu.read_col_range(fptr, "z", &range)?;
+        let z_unc_col: Vec<f64> = hdu.read_col_range(fptr, "z_unc", &range)?;
+        let z_tech_col: Vec<String> = hdu.read_col_range(fptr, "z_tech", &range)?;
+        let z_qual_col: Vec<bool> = hdu.read_col_range(fptr, "z_qual", &range)?;
+        let z_refcode_col: Vec<String> = hdu.read_col_range(fptr, "z_refcode", &range)?;
+        let ebv_col: Vec<f64> = hdu.read_col_range(fptr, "ebv", &range)?;
+        let m_star_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar", &range)?;
+        let m_star_unc_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar_unc", &range)?;
+        let ml_ratio_col: Vec<f64> = hdu.read_col_range(fptr, "MLratio", &range)?;
+
+        // Combine the columns into a Vec<Row>
+        let mut rows = Vec::with_capacity(objname_col.len());
+        for i in 0..objname_col.len() {
+            rows.push(Ned {
+                objname: objname_col[i].clone(),
+                ra: ra_col[i],
+                dec: dec_col[i],
+                objtype: objtype_col[i].clone(),
+                z: float_nullable(z_col[i]),
+                z_unc: float_nullable(z_unc_col[i]),
+                z_tech: z_tech_col[i].clone(),
+                z_qual: z_qual_col[i],
+                z_refcode: z_refcode_col[i].clone(),
+                ebv: float_nullable(ebv_col[i]),
+                m_star: float_nullable(m_star_col[i]),
+                m_star_unc: float_nullable(m_star_unc_col[i]),
+                ml_ratio: float_nullable(ml_ratio_col[i]),
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for Ned {
+    fn has_coordinates() -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -311,41 +379,6 @@ impl FromAsciiRow for VSX {
             period,
             spectral_type,
         })
-    }
-}
-
-impl FitsRowBatch for Ned {
-    fn read_batch(
-        hdu: &fitsio::hdu::FitsHdu,
-        fptr: &mut FitsFile,
-        range: std::ops::Range<usize>,
-    ) -> Result<Vec<Ned>> {
-        let objname_col: Vec<String> = hdu.read_col_range(fptr, "objname", &range)?;
-        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "ra", &range)?;
-        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "dec", &range)?;
-        let objtype_col: Vec<String> = hdu.read_col_range(fptr, "objtype", &range)?;
-        let z_col: Vec<f64> = hdu.read_col_range(fptr, "z", &range)?;
-        let z_unc_col: Vec<f64> = hdu.read_col_range(fptr, "z_unc", &range)?;
-
-        // Combine the columns into a Vec<Row>
-        let mut rows = Vec::with_capacity(objname_col.len());
-        for i in 0..objname_col.len() {
-            rows.push(Ned {
-                objname: objname_col[i].clone(),
-                ra: ra_col[i],
-                dec: dec_col[i],
-                objtype: objtype_col[i].clone(),
-                z: z_col[i],
-                z_unc: z_unc_col[i],
-            });
-        }
-        Ok(rows)
-    }
-}
-
-impl HasCoordinates for Ned {
-    fn has_coordinates() -> bool {
-        true
     }
 }
 
