@@ -85,13 +85,18 @@ def download_file(arguments):
     response = requests.get(url, stream=True)
     total_size = int(response.headers.get('content-length', 0))
     # if the file already exists and is complete, skip downloading
-    if os.path.exists(output_path) and not convert_to_parquet:
+    download = True
+    if os.path.exists(output_path):
         if os.path.getsize(output_path) == total_size:
-            return
-        os.remove(output_path)
-    with open(output_path, 'wb') as file:
-        for data in response.iter_content(chunk_size=1024):
-            file.write(data)
+            if not convert_to_parquet:
+                return
+            download = False
+        else:
+            os.remove(output_path)
+    if download:
+        with open(output_path, 'wb') as file:
+            for data in response.iter_content(chunk_size=1024):
+                file.write(data)
 
     if convert_to_parquet and output_path.endswith('.tbl.gz'):
         # the catwise .tbl.gz files star with a number of comments lines starting with '\'
@@ -103,34 +108,37 @@ def download_file(arguments):
         # let's skip all the lines that start with '\', column names and types
         # and finally read the data into a pandas DataFrame
         # it's a gzipped file, so when we use with open, it will handle the decompression
-        with gzip.open(output_path, 'rt') as f:
-            lines = f.readlines()
-        data_start_idx = 0
-        for i, line in enumerate(lines):
-            if not line.startswith('\\'):
-                data_start_idx = i
-                break
-        column_names = [col.strip() for col in lines[data_start_idx].strip().split('|')][1:-1]
-        data_types = [dtype.strip() for dtype in lines[data_start_idx + 1].strip().split('|')][1:-1]
-        dtype_map = {}
-        for col, dtype in zip(column_names, data_types):
-            dtype = dtype.lower().strip()
-            if dtype in ['int', 'integer', 'long', 'i']:
-                dtype_map[col] = 'Int64'
-            elif dtype in ['float', 'double', 'real', 'r']:
-                dtype_map[col] = 'float64'
-            elif dtype == 'boolean':
-                dtype_map[col] = 'boolean'
-            elif dtype in ['char', 'string']:
-                dtype_map[col] = 'string'
-            else:
-                dtype_map[col] = 'string'
+        try:
+            with gzip.open(output_path, 'rt') as f:
+                lines = f.readlines()
+            data_start_idx = 0
+            for i, line in enumerate(lines):
+                if not line.startswith('\\'):
+                    data_start_idx = i
+                    break
+            column_names = [col.strip() for col in lines[data_start_idx].strip().split('|')][1:-1]
+            data_types = [dtype.strip() for dtype in lines[data_start_idx + 1].strip().split('|')][1:-1]
+            dtype_map = {}
+            for col, dtype in zip(column_names, data_types):
+                dtype = dtype.lower().strip()
+                if dtype in ['int', 'integer', 'long', 'i']:
+                    dtype_map[col] = 'Int64'
+                elif dtype in ['float', 'double', 'real', 'r']:
+                    dtype_map[col] = 'float64'
+                elif dtype == 'boolean':
+                    dtype_map[col] = 'boolean'
+                elif dtype in ['char', 'string']:
+                    dtype_map[col] = 'string'
+                else:
+                    dtype_map[col] = 'string'
 
-        data_lines = lines[data_start_idx + 4:]
-        data_str = '\n'.join([line.strip() for line in data_lines if line.strip() != ''])
-        df = pd.read_csv(StringIO(data_str), names=column_names, dtype=dtype_map, delim_whitespace=True, na_values=['NULL', 'null', 'NaN', 'nan', ''])
-        df.to_parquet(parquet_path, index=False)
-        os.remove(output_path)
+            data_lines = lines[data_start_idx + 4:]
+            data_str = '\n'.join([line.strip() for line in data_lines if line.strip() != ''])
+            df = pd.read_csv(StringIO(data_str), names=column_names, dtype=dtype_map, na_values=['NULL', 'null', 'NaN', 'nan', ''], sep='\s+')
+            df.to_parquet(parquet_path, index=False)
+            os.remove(output_path)
+        except Exception as e:
+            print(f"Error processing file {output_path}: {e}")
 
 if __name__ == "__main__":
     args = parser.parse_args()
