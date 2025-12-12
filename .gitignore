@@ -25,3 +25,5 @@ target
 
 /target
 /data
+.venv
+.idea
