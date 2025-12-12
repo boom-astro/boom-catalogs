@@ -1,12 +1,18 @@
 """Script to download all Gaia DR3 source CSV files in parallel."""
-import requests
-from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
 import os
 import argparse
+import requests
+
+from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+from dotenv import load_dotenv
+
+load_dotenv()
+# Retrieve output directory from environment variable or use ./gaia_dr3_files/
+GAIA_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/gaia_dr3_files/"
 
 parser = argparse.ArgumentParser(description="Download all Gaia DR3 source CSV files in parallel.")
-parser.add_argument("--output-dir", type=str, default="./gaia_dr3_files/", help="Directory to save downloaded files")
+parser.add_argument("--output-dir", type=str, default=GAIA_OUTPUT_DIR, help="Directory to save downloaded files")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
 def get_urls(main_url = "https://cdn.gea.esac.esa.int/Gaia/gdr3/gaia_source/"):

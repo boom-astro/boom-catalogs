@@ -22,8 +22,14 @@ target
 
 
 # Added by cargo
-
 /target
 /data
+
+# Env file
+.env
+
+# Python virtual environment
 .venv
+
+# IDE files
 .idea

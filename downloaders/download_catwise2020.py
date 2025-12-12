@@ -1,15 +1,21 @@
 """Script to download all catWISE 2020 files in parallel."""
 import requests
-from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
 import os
 import argparse
 import pandas as pd
-from io import StringIO
 import gzip
 
+from multiprocessing import Pool, cpu_count
+from tqdm import tqdm
+from io import StringIO
+from dotenv import load_dotenv
+
+load_dotenv()
+# Retrieve output directory from environment variable or use ./catwise2020_files/
+CATWISE_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/catwise2020_files/"
+
 parser = argparse.ArgumentParser(description="Download all catWISE 2020 files in parallel.")
-parser.add_argument("--output-dir", type=str, default="./catwise2020_files/", help="Directory to save downloaded files")
+parser.add_argument("--output-dir", type=str, default=CATWISE_OUTPUT_DIR, help="Directory to save downloaded files")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 parser.add_argument("--convert-to-parquet", action='store_true', help="Convert downloaded .tbl.gz files to parquet format")
 

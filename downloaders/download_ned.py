@@ -1,11 +1,17 @@
 """Script to download NED LVS."""
-import requests
-from tqdm import tqdm
 import os
+import requests
 import argparse
 
+from tqdm import tqdm
+from dotenv import load_dotenv
+
+load_dotenv()
+# Retrieve output directory from environment variable or use ./ned_lvs/
+NED_LVS_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ned_lvs/"
+
 parser = argparse.ArgumentParser(description="Download NED LVS.")
-parser.add_argument("--output-dir", type=str, default="./ned_lvs/", help="Directory to save the downloaded file")
+parser.add_argument("--output-dir", type=str, default=NED_LVS_OUTPUT_DIR, help="Directory to save the downloaded file")
 
 if __name__ == "__main__":
     args = parser.parse_args()

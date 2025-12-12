@@ -1,11 +1,17 @@
 """Script to download milliquas."""
 import requests
-from tqdm import tqdm
 import os
 import argparse
 
+from tqdm import tqdm
+from dotenv import load_dotenv
+
+load_dotenv()
+# Retrieve output directory from environment variable or use ./milliquas/
+MILLIQUAS_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/milliquas/"
+
 parser = argparse.ArgumentParser(description="Download milliquas.")
-parser.add_argument("--output-dir", type=str, default="./milliquas/", help="Directory to save the downloaded file")
+parser.add_argument("--output-dir", type=str, default=MILLIQUAS_OUTPUT_DIR, help="Directory to save the downloaded file")
 
 if __name__ == "__main__":
     args = parser.parse_args()
