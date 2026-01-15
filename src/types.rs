@@ -623,6 +623,7 @@ impl FitsRowBatch for Milliquas {
     }
 }
 
+/// Galex struct representing a row in the GALEX catalog (https://iopscience.iop.org/article/10.3847/1538-4365/aa7053/meta)
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Galex {
     #[serde(rename(serialize = "_id"), alias = "objid")]
@@ -665,6 +666,141 @@ impl HasCoordinates for Galex {
     }
 }
 
+/// TwoMass struct representing a row in the 2MASS catalog (https://irsa.ipac.caltech.edu/2MASS/download/allsky/format_psc.html)
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TwoMass {
+    #[serde(rename(serialize = "_id"))]
+    pub designation: String,
+    pub ra: f32,
+    pub dec: f32,
+    pub j_m: Option<f32>,
+    pub j_cmsig: Option<f32>,
+    pub j_msigcom: Option<f32>,
+    pub j_snr: Option<f32>,
+    pub h_m: Option<f32>,
+    pub h_cmsig: Option<f32>,
+    pub h_msigcom: Option<f32>,
+    pub h_snr: Option<f32>,
+    pub k_m: Option<f32>,
+    pub k_cmsig: Option<f32>,
+    pub k_msigcom: Option<f32>,
+    pub k_snr: Option<f32>,
+    pub ph_qual: Option<String>,
+    pub rd_flg: Option<String>,
+    pub bl_flg: Option<String>,
+    pub cc_flg: Option<String>,
+    pub ndet: Option<i32>,
+}
+// const TWOMASS_HEADERS: [&str; 60] = [
+//     "ra",
+//     "dec",
+//     "err_maj",
+//     "err_min",
+//     "err_ang",
+//     "designation",
+//     "j_m",
+//     "j_cmsig",
+//     "j_msigcom",
+//     "j_snr",
+//     "h_m",
+//     "h_cmsig",
+//     "h_msigcom",
+//     "h_snr",
+//     "k_m",
+//     "k_cmsig",
+//     "k_msigcom",
+//     "k_snr",
+//     "ph_qual",
+//     "rd_flg",
+//     "bl_flg",
+//     "cc_flg",
+//     "ndet",
+//     "prox",
+//     "pxpa",
+//     "pxcntr",
+//     "gal_contam",
+//     "mp_flg",
+//     "pts_key",
+//     "hemis",
+//     "date",
+//     "scan",
+//     "glon",
+//     "glat",
+//     "x_scan",
+//     "jdate",
+//     "j_psfchi",
+//     "h_psfchi",
+//     "k_psfchi",
+//     "j_m_stdap",
+//     "j_msig_stdap",
+//     "h_m_stdap",
+//     "h_msig_stdap",
+//     "k_m_stdap",
+//     "k_msig_stdap",
+//     "dist_edge_ns",
+//     "dist_edge_ew",
+//     "dist_edge_flg",
+//     "dup_src",
+//     "use_src",
+//     "a",
+//     "dist_opt",
+//     "phi_opt",
+//     "b_m_opt",
+//     "vr_m_opt",
+//     "nopt_mchs",
+//     "ext_key",
+//     "scan_key",
+//     "coadd_key",
+//     "coadd"
+// ];
+
+impl FromAsciiRow for TwoMass {
+    fn from_line(line: &str) -> Result<Self, String> {
+        let fields: Vec<&str> = line.split('|').collect();
+        if fields.len() < 60 {
+            return Err(format!(
+                "Expected at least {} fields, found {}",
+                60,
+                fields.len()
+            ));
+        }
+        Ok(TwoMass {
+            designation: fields[5].trim().to_string(),
+            ra: fields[0]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Failed to parse ra '{}': {}", fields[0], e))?,
+            dec: fields[1]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Failed to parse dec '{}': {}", fields[1], e))?,
+            j_m: parse_optional(fields[6]),
+            j_cmsig: parse_optional(fields[7]),
+            j_msigcom: parse_optional(fields[8]),
+            j_snr: parse_optional(fields[9]),
+            h_m: parse_optional(fields[10]),
+            h_cmsig: parse_optional(fields[11]),
+            h_msigcom: parse_optional(fields[12]),
+            h_snr: parse_optional(fields[13]),
+            k_m: parse_optional(fields[14]),
+            k_cmsig: parse_optional(fields[15]),
+            k_msigcom: parse_optional(fields[16]),
+            k_snr: parse_optional(fields[17]),
+            ph_qual: parse_optional_string(fields[18]),
+            rd_flg: parse_optional_string(fields[19]),
+            bl_flg: parse_optional_string(fields[20]),
+            cc_flg: parse_optional_string(fields[21]),
+            ndet: parse_optional(fields[22]),
+        })
+    }
+}
+
+impl HasCoordinates for TwoMass {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
@@ -692,4 +828,5 @@ pub enum ParquetCatalogs {
 #[serde(rename_all = "kebab-case")]
 pub enum AsciiCatalogs {
     VSX,
+    TwoMass,
 }

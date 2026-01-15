@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::csv::process_csv;
-use boom_catalogs::types::{CsvCatalogs, Gaia, LSSG, Ned, Galex};
+use boom_catalogs::types::{CsvCatalogs, Gaia, Galex, LSSG, Ned};
 use clap::Parser;
 
 #[derive(Parser)]

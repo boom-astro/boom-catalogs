@@ -60,18 +60,34 @@ impl<R: BufRead> TableReader<R> {
     }
 }
 
-fn open_table<P: AsRef<Path>>(path: P) -> std::io::Result<TableReader<BufReader<File>>> {
-    let file = File::open(path)?;
-    Ok(TableReader::new(BufReader::new(file)))
+fn open_table<P: AsRef<Path>>(path: P) -> std::io::Result<TableReader<Box<dyn BufRead>>> {
+    let file = File::open(&path)?;
+    if let Some(ext) = path.as_ref().extension() {
+        if ext == "gz" {
+            let decoder = flate2::read::GzDecoder::new(file);
+            let reader = BufReader::new(decoder);
+            return Ok(TableReader::new(Box::new(reader)));
+        }
+    }
+    let reader = BufReader::new(file);
+    Ok(TableReader::new(Box::new(reader)))
 }
 
 fn estimate_lines_in_file(path: &str) -> Result<usize> {
-    // get the metadata to find the file size
+    // In the gzip case, we assume a 4:1 compression ratio
     let metadata = std::fs::metadata(path)?;
-    let file_size = metadata.len() as usize;
-    // just read the first line (all lines are the exact same length in this file)
+    let file_size = if path.ends_with(".gz") {
+        (metadata.len() as usize) * 4
+    } else {
+        metadata.len() as usize
+    };
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
+    let reader: Box<dyn BufRead> = if path.ends_with(".gz") {
+        let decoder = flate2::read::GzDecoder::new(file);
+        Box::new(BufReader::new(decoder))
+    } else {
+        Box::new(BufReader::new(file))
+    };
     let mut lines = reader.lines();
     let first_line = lines
         .next()
@@ -100,9 +116,13 @@ where
         anyhow::bail!("ASCII file does not exist: {}", ascii_path);
     }
     // Check that the ASCII file has a .dat or .ascii extension
-    if !ascii_path.ends_with(".dat") && !ascii_path.ends_with(".ascii") {
+    if !ascii_path.ends_with(".dat")
+        && !ascii_path.ends_with(".ascii")
+        && !ascii_path.ends_with(".dat.gz")
+        && !ascii_path.ends_with(".ascii.gz")
+    {
         anyhow::bail!(
-            "ASCII file must have .dat or .ascii extension: {}",
+            "ASCII file must have .dat, .ascii, .dat.gz, or .ascii.gz extension: {}",
             ascii_path
         );
     }

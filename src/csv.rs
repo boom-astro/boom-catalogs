@@ -8,6 +8,13 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
+fn create_reader(boxed_reader: Box<dyn Read>) -> csv::Reader<Box<dyn Read>> {
+    ReaderBuilder::new()
+        .comment(Some(b'#'))
+        .has_headers(true)
+        .from_reader(boxed_reader)
+}
+
 // CSV files can be very large and have no mean to get their length
 // without reading the whole file. To provide a progress bar we
 // estimate the number of lines in the file by reading the first
@@ -20,7 +27,7 @@ fn estimate_lines_in_file(path: &str) -> Result<usize> {
     // so we estimate the total file size by assuming a compression
     // ratio of 3:1
     let file_size = if path.ends_with(".gz") {
-        (metadata.len() as usize) / 3
+        (metadata.len() as usize) * 3
     } else {
         metadata.len() as usize
     };
@@ -107,22 +114,15 @@ where
     let (s, workers) = processor.init_workers();
 
     let mut rdr = {
-        if csv_path.ends_with(".gz") {
+        let boxed_reader: Box<dyn Read> = if csv_path.ends_with(".gz") {
             let file = File::open(&csv_path)?;
             let decoder = flate2::read::GzDecoder::new(file);
-            let boxed_reader: Box<dyn Read> = Box::new(BufReader::new(decoder));
-            ReaderBuilder::new()
-                .comment(Some(b'#'))
-                .has_headers(true)
-                .from_reader(boxed_reader)
+            Box::new(BufReader::new(decoder))
         } else {
             let file = File::open(&csv_path)?;
-            let boxed_reader: Box<dyn Read> = Box::new(BufReader::new(file));
-            ReaderBuilder::new()
-                .comment(Some(b'#'))
-                .has_headers(true)
-                .from_reader(boxed_reader)
-        }
+            Box::new(BufReader::new(file))
+        };
+        create_reader(boxed_reader)
     };
 
     let progress_bar = ProgressBar::new(num_rows as u64)

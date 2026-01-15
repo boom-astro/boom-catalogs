@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::ascii::process_ascii;
-use boom_catalogs::types::{AsciiCatalogs, VSX};
+use boom_catalogs::types::{AsciiCatalogs, TwoMass, VSX};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -56,6 +56,20 @@ async fn main() -> Result<()> {
     match args.type_name {
         AsciiCatalogs::VSX => {
             process_ascii::<VSX>(
+                args.uri,
+                args.db,
+                args.collection,
+                args.path,
+                args.num_workers,
+                args.batch_size,
+                args.channel_capacity,
+                args.drop_existing_collection,
+                args.init_indexes,
+            )
+            .await?;
+        }
+        AsciiCatalogs::TwoMass => {
+            process_ascii::<TwoMass>(
                 args.uri,
                 args.db,
                 args.collection,
