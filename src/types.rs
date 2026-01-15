@@ -527,10 +527,107 @@ impl HasCoordinates for CatWISE2020 {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Milliquas {
+    #[serde(rename(serialize = "_id"))]
+    pub name: String,
+    pub ra: f64,
+    pub dec: f64,
+    pub objtype: String,
+    pub rmag: Option<f32>,
+    pub bmag: Option<f32>,
+    pub comment: Option<String>,
+    pub rclass: Option<String>,
+    pub bclass: Option<String>,
+    pub z: Option<f32>,
+    pub xname: Option<String>,
+    pub rname: Option<String>,
+    pub lobe1: Option<String>,
+    pub lobe2: Option<String>,
+}
+
+impl HasCoordinates for Milliquas {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+impl FitsRowBatch for Milliquas {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<Milliquas>> {
+        let name_col: Vec<String> = hdu.read_col_range(fptr, "NAME", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "DEC", &range)?;
+        let type_col: Vec<String> = hdu.read_col_range(fptr, "TYPE", &range)?;
+        let rmag_col: Vec<f32> = hdu.read_col_range(fptr, "RMAG", &range)?;
+        let bmag_col: Vec<f32> = hdu.read_col_range(fptr, "BMAG", &range)?;
+        let comment_col: Vec<String> = hdu.read_col_range(fptr, "COMMENT", &range)?;
+        let rclass_col: Vec<String> = hdu.read_col_range(fptr, "R", &range)?;
+        let bclass_col: Vec<String> = hdu.read_col_range(fptr, "B", &range)?;
+        let z_col: Vec<f32> = hdu.read_col_range(fptr, "Z", &range)?;
+        let xname_col: Vec<String> = hdu.read_col_range(fptr, "XNAME", &range)?;
+        let rname_col: Vec<String> = hdu.read_col_range(fptr, "RNAME", &range)?;
+        let lobe1_col: Vec<String> = hdu.read_col_range(fptr, "LOBE1", &range)?;
+        let lobe2_col: Vec<String> = hdu.read_col_range(fptr, "LOBE2", &range)?;
+
+        fn clean_string_column(col: Vec<String>) -> Vec<Option<String>> {
+            // we want to remove trailing and leading spaces
+            // then if the string is empty, we convert to None
+            // also if the string is just "-", we convert to None
+            col.into_iter()
+                .map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() || trimmed == "-" {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        }
+
+        let comment_col = clean_string_column(comment_col);
+        let rclass_col = clean_string_column(rclass_col);
+        let bclass_col = clean_string_column(bclass_col);
+        let xname_col = clean_string_column(xname_col);
+        let rname_col = clean_string_column(rname_col);
+        let lobe1_col = clean_string_column(lobe1_col);
+        let lobe2_col = clean_string_column(lobe2_col);
+
+        // Combine the columns into a Vec<Row>
+        let mut rows = Vec::with_capacity(name_col.len());
+        for i in 0..name_col.len() {
+            rows.push(Milliquas {
+                name: name_col[i].clone(),
+                ra: ra_col[i],
+                dec: dec_col[i],
+                objtype: type_col[i].clone(),
+                rmag: Some(rmag_col[i]),
+                bmag: Some(bmag_col[i]),
+                comment: comment_col[i].clone(),
+                rclass: rclass_col[i].clone(),
+                bclass: bclass_col[i].clone(),
+                z: Some(z_col[i]),
+                xname: xname_col[i].clone(),
+                rname: rname_col[i].clone(),
+                lobe1: lobe1_col[i].clone(),
+                lobe2: lobe2_col[i].clone(),
+            });
+        }
+        Ok(rows)
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
     Ned,
+    Milliquas,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]

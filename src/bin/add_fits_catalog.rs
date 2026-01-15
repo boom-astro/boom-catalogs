@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::fits::process_fits;
-use boom_catalogs::types::{FitsCatalogs, Ned};
+use boom_catalogs::types::{FitsCatalogs, Milliquas, Ned};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -56,6 +56,20 @@ async fn main() -> Result<()> {
     match args.type_name {
         FitsCatalogs::Ned => {
             process_fits::<Ned>(
+                args.uri,
+                args.db,
+                args.collection,
+                args.path,
+                args.num_workers,
+                args.batch_size,
+                args.channel_capacity,
+                args.drop_existing_collection,
+                args.init_indexes,
+            )
+            .await?;
+        }
+        FitsCatalogs::Milliquas => {
+            process_fits::<Milliquas>(
                 args.uri,
                 args.db,
                 args.collection,
