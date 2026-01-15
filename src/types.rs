@@ -623,6 +623,48 @@ impl FitsRowBatch for Milliquas {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Galex {
+    #[serde(rename(serialize = "_id"), alias = "objid")]
+    pub objid: i64,
+    pub ra: f64,
+    pub dec: f64,
+    #[serde(deserialize_with = "deserialize_galex_optional_f32")]
+    pub fuv_mag: Option<f32>,
+    #[serde(deserialize_with = "deserialize_galex_optional_f32")]
+    pub fuv_magerr: Option<f32>,
+    #[serde(deserialize_with = "deserialize_galex_optional_f32")]
+    pub nuv_mag: Option<f32>,
+    #[serde(deserialize_with = "deserialize_galex_optional_f32")]
+    pub nuv_magerr: Option<f32>,
+    #[serde(alias = "fexptime")]
+    pub fuv_exp: Option<f32>,
+    #[serde(alias = "nexptime")]
+    pub nuv_exp: Option<f32>,
+    #[serde(alias = "type")]
+    pub obstype: Option<i32>,
+    pub band: Option<i32>,
+}
+
+// let's make a custom deserialize function we can use to convert -999.0 to None
+fn deserialize_galex_optional_f32<'de, D>(deserializer: D) -> Result<Option<f32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val: f32 = serde::Deserialize::deserialize(deserializer)?;
+    if val == -999.0 {
+        Ok(None)
+    } else {
+        Ok(Some(val))
+    }
+}
+
+impl HasCoordinates for Galex {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
@@ -636,6 +678,7 @@ pub enum CsvCatalogs {
     LSSG,
     Ned,
     Gaia,
+    Galex,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]

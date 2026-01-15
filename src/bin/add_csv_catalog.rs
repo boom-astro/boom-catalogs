@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::csv::process_csv;
-use boom_catalogs::types::{CsvCatalogs, Gaia, LSSG, Ned};
+use boom_catalogs::types::{CsvCatalogs, Gaia, LSSG, Ned, Galex};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -109,6 +109,20 @@ async fn main() -> Result<()> {
             }
             CsvCatalogs::Gaia => {
                 process_csv::<Gaia>(
+                    uri,
+                    db,
+                    collection,
+                    path.clone(),
+                    args.num_workers,
+                    args.batch_size,
+                    args.channel_capacity,
+                    args.drop_existing_collection,
+                    args.init_indexes,
+                )
+                .await
+            }
+            CsvCatalogs::Galex => {
+                process_csv::<Galex>(
                     uri,
                     db,
                     collection,
