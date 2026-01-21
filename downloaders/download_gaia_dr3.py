@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description="Download all Gaia DR3 source CSV f
 parser.add_argument("--output-dir", type=str, default=GAIA_OUTPUT_DIR, help="Directory to save downloaded files")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
-def get_urls(main_url = "https://cdn.gea.esac.esa.int/Gaia/gdr3/gaia_source/"):
+def get_urls(main_url = "https://sdsc-users.flatironinstitute.org/~gaia/dr3/csv/GaiaSource/"):
     response = requests.get(main_url)
     lines = response.text.splitlines()
     urls = []
@@ -26,6 +26,15 @@ def get_urls(main_url = "https://cdn.gea.esac.esa.int/Gaia/gdr3/gaia_source/"):
             filename = line[start:end]
             if filename.endswith('.csv.gz'):
                 urls.append(main_url + filename)
+
+    if not urls:
+        # let's try to parse with beautifulsoup if no urls found
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        for link in soup.find_all('a'):
+            href = link.get('href')
+            if href and href.endswith('.csv.gz'):
+                urls.append(main_url + href)
     return urls
 
 def download_file(arguments):
