@@ -30,7 +30,7 @@ final_columns = [
 	# Unique identifier
 	'lsid',
 	# Basic info
-	'maskbits', 'fitbits', 'type', 'ra', 'dec', 'ra_err', 'dec_err',
+	'maskbits', 'fitbits', 'type', 'ra', 'dec', 'ra_err', 'dec_err', 'ebv',
 
 	# LS photometry
 	'mag_g', 'mag_err_g', 'snr_g', f'limmag_g', 'rchisq_g', 'nobs_g', 'magcorr_g',
