@@ -3,3 +3,6 @@ tqdm
 pandas
 pyarrow
 fastparquet
+dotenv
+astropy
+beautifulsoup4
