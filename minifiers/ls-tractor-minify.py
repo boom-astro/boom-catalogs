@@ -1,14 +1,27 @@
+import argparse
 import os
 from astropy.io import fits
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
+from tqdm import tqdm
+from multiprocessing import Pool, cpu_count
+
+load_dotenv()
+INPUT_DIR = f"{os.getenv('INPUT_DIR','.')}/ls_dr10_tractor/"
+OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr10_tractor_minified/"
+
+parser = argparse.ArgumentParser(description="Minify all Legacy Survey DR10 tractor FITS files in parallel.")
+parser.add_argument("--input-dir", type=str, default=INPUT_DIR, help="Directory with input FITS files")
+parser.add_argument("--output-dir", type=str, default=OUTPUT_DIR, help="Directory to save minified files")
+parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
 SNR_THRESHOLD = 3.0
 DIFFMAGLIM_SIGMA = 5.0
 
 sig_str = f"{str(DIFFMAGLIM_SIGMA).replace('.', 'p')}"
 columns_to_keep = [
-	'release', 'brickid', 'objid', 'maskbits', 'fitbits', 'type', 'ra', 'dec', 'ra_ivar', 'dec_ivar',
+	'release', 'brickid', 'objid', 'maskbits', 'fitbits', 'type', 'ra', 'dec', 'ra_ivar', 'dec_ivar', 'ebv',
 
 	# LS photometry
 	'flux_g', 'flux_r', 'flux_i', 'flux_z', 'flux_ivar_g', 'flux_ivar_r', 'flux_ivar_i', 'flux_ivar_z',
@@ -45,7 +58,8 @@ final_columns = [
 	'mag_w4', 'mag_err_w4', 'snr_w4', f'limmag_w4', 'rchisq_w4', 'nobs_w4', 'magcorr_w4',
 ]
 
-def process_tractor_file(file_path, output_dir):
+def process_tractor_file(args):
+	file_path, output_path = args
 	with fits.open(file_path) as F:
 		data = F[1].data
 		small_data = {}
@@ -62,8 +76,6 @@ def process_tractor_file(file_path, output_dir):
 	# remove rows where ra_ivar or dec_ivar is zero
 	# let's make a mask and apply it
 	mask = (df['ra_ivar'] > 0) & (df['dec_ivar'] > 0)
-	if not np.all(mask):
-		print(f"Warning: {np.sum(~mask)} rows with ra_ivar or dec_ivar == 0 in file {file_path}, removing them")
 	df = df[mask].reset_index(drop=True)
 
 	# add ra_err and dec_err columns
@@ -72,16 +84,12 @@ def process_tractor_file(file_path, output_dir):
 
 	# Add Legacy Survey mag + mag err + snr + 5-sigma limiting mag columns for g, r, i, z bands
 	for band in ['g', 'r', 'i', 'z', 'w1', 'w2', 'w3', 'w4']:
-		# DEBUG, check the number of rows where flux_ivar == 0
-		num_zero_ivar = np.sum(df[f'flux_ivar_{band}'] == 0)
-		if num_zero_ivar > 0:
-			print(f"Warning: {num_zero_ivar} rows with flux_ivar_{band} == 0 in file {file_path}")
 		# now compute the magnitude conversion, handling non-positive fluxes
 		flux_col, flux_ivar_col = f'flux_{band}', f'flux_ivar_{band}'
 		mag_col, mag_err_col = f'mag_{band}', f'mag_err_{band}'
 
-		# create a mask for valid flux values
-		valid_flux_mask = df[flux_col] > 0
+		# create a mask for valid flux and flux_ivar values (>0)
+		valid_flux_mask = (df[flux_col] > 0) & (df[flux_ivar_col] > 0)
 		# convert from flux_ivar to flux_err
 		df.loc[valid_flux_mask, 'flux_err_' + band] = 1.0 / np.sqrt(df.loc[valid_flux_mask, flux_ivar_col])
 		# compute snr
@@ -112,24 +120,34 @@ def process_tractor_file(file_path, output_dir):
 	# let's create our finalized dataframe with selected columns
 	df = df[final_columns]
 
-	# show the first few rows for debugging, where no values are NaN
-	print(df.dropna()[['lsid', 'ra', 'dec', 'mag_g', 'mag_r', 'mag_i', 'mag_z']].head())
+	# make sure the output directory exists
+	os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-	# save to parquet at output_dir with same filename but .parquet extension
-	output_path = os.path.join(output_dir, os.path.basename(file_path).replace('.fits', '.parquet'))
+	# save to parquet
 	df.to_parquet(output_path, index=False)
-	print(f"Processed {file_path}, saved to {output_path}")
 
 if __name__ == "__main__":
-	path = "./legacysurvey_tractor/tractor-0001m002.fits"
-	output_dir = "./legacysurvey_tractor_processed/"
-	os.makedirs(output_dir, exist_ok=True)
-	process_tractor_file(path, output_dir)
+	args = parser.parse_args()
+	input_dir = args.input_dir
+	output_dir = args.output_dir
 
-	# DEBUG, compare the size of original FITS file and processed parquet file
-	original_size = os.path.getsize(path)
-	processed_size = os.path.getsize(os.path.join(output_dir, os.path.basename(path).replace('.fits', '.parquet')))
-	print(f"Original FITS size: {original_size / (1024*1024):.2f} MB")
-	print(f"Processed Parquet size: {processed_size / (1024*1024):.2f} MB")
-	# as a percentage
-	print(f"Size reduction: {(1 - processed_size / original_size) * 100:.2f} %")
+	# prepare the list of files to process so we can parallelize
+	inputs = []
+	for root, dirs, files in os.walk(input_dir):
+		for file in files:
+			if file.endswith(".fits"):
+				input_path = os.path.join(root, file)
+				# create the corresponding output path
+				relative_path = os.path.relpath(input_path, input_dir)
+				output_path = os.path.join(output_dir, relative_path.replace('.fits', '.parquet'))
+				# add to inputs
+				inputs.append((input_path, output_path))
+
+	# let's parallelize the processing
+	nb_processes = min(args.processes, cpu_count() - 2)
+	with tqdm(total=len(inputs), desc="Processing tractor files") as pbar:
+		with Pool(processes=nb_processes) as pool:
+			for _ in pool.imap_unordered(process_tractor_file, inputs):
+				pbar.update()
+
+

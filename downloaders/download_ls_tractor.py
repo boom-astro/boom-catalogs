@@ -104,8 +104,13 @@ def get_urls(main_url="https://portal.nersc.gov/cfs/cosmo/data/legacysurvey/dr10
     return urls
 
 def download_file(arguments):
-    url, output_dir = arguments
-    output_path = os.path.join(output_dir, url.split('/')[-1])
+    url, output_dir, base_url = arguments
+    # Extract relative path from URL by removing base URL
+    relative_path = url.replace(base_url, '')
+    output_path = os.path.join(output_dir, relative_path)
+    
+    # Create subdirectory structure if needed
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     try:
         response = requests.get(url, stream=True, timeout=30)
@@ -133,6 +138,9 @@ if __name__ == "__main__":
 
     cache_path = get_cache_path(output_dir)
     
+    # Base URL for extracting relative paths
+    base_url = "https://portal.nersc.gov/cfs/cosmo/data/legacysurvey/dr10/south/tractor/"
+    
     # Try to load from cache unless --refresh-cache is specified
     if not args.refresh_cache:
         urls = load_urls_from_cache(cache_path)
@@ -141,20 +149,17 @@ if __name__ == "__main__":
     
     # If cache miss or refresh requested, fetch URLs from the server
     if urls is None:
-        urls = get_urls()
+        urls = get_urls(base_url)
         save_urls_to_cache(urls, cache_path)
     
     print(f"Found {len(urls)} files to download (using {nb_processes} processes)...")
-
-    # DEBUG, only keep the first 10 URLs
-    urls = urls[:10]
 
     if urls:
         with tqdm(total=len(urls)) as pbar:
             with Pool(processes=nb_processes) as pool:
                 for _ in pool.imap_unordered(
                     download_file,
-                    [(url, output_dir) for url in urls]
+                    [(url, output_dir, base_url) for url in urls]
                 ):
                     pbar.update()
         print(f"Download complete! Files saved to {output_dir}")
