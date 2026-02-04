@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::fs;
 
 // Example usage to find the correct column positions:
 // Uncomment this function and call it to help determine column positions
@@ -115,17 +116,47 @@ where
     if !Path::new(&ascii_path).exists() {
         anyhow::bail!("ASCII file does not exist: {}", ascii_path);
     }
-    // Check that the ASCII file has a .dat or .ascii extension
-    if !ascii_path.ends_with(".dat")
-        && !ascii_path.ends_with(".ascii")
-        && !ascii_path.ends_with(".dat.gz")
-        && !ascii_path.ends_with(".ascii.gz")
-    {
-        anyhow::bail!(
-            "ASCII file must have .dat, .ascii, .dat.gz, or .ascii.gz extension: {}",
-            ascii_path
-        );
+
+    // Collect files to process
+    let files: Vec<String> = if Path::new(&ascii_path).is_dir() {
+        // If it's a directory, collect all valid files
+        fs::read_dir(&ascii_path)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file() && {
+                    let name = path.to_string_lossy();
+                    name.ends_with(".dat")
+                        || name.ends_with(".ascii")
+                        || name.ends_with(".dat.gz")
+                        || name.ends_with(".ascii.gz")
+                        || name.ends_with(".gz") // Accept any .gz file
+                }
+            })
+            .map(|path| path.to_string_lossy().to_string())
+            .collect()
+    } else {
+        // Single file - validate extension
+        let valid = ascii_path.ends_with(".dat")
+            || ascii_path.ends_with(".ascii")
+            || ascii_path.ends_with(".dat.gz")
+            || ascii_path.ends_with(".ascii.gz")
+            || ascii_path.ends_with(".gz");
+
+        if !valid {
+            anyhow::bail!(
+                "ASCII file must have .dat, .ascii, .gz extension: {}",
+                ascii_path
+            );
+        }
+        vec![ascii_path.clone()]
+    };
+
+    if files.is_empty() {
+        anyhow::bail!("No valid files found in: {}", ascii_path);
     }
+
+    println!("Found {} files to process", files.len());
 
     let processor = Processor::new::<T>(
         mongodb_uri,
@@ -140,12 +171,14 @@ where
     .await?;
     let (s, workers) = processor.init_workers::<T>();
 
-    let num_rows = estimate_lines_in_file(&ascii_path)?;
-
-    let reader = open_table(ascii_path)?;
+    // Estimate total lines across all files
+    let num_rows: usize = files
+        .iter()
+        .filter_map(|f| estimate_lines_in_file(f).ok())
+        .sum();
 
     let progress_bar = ProgressBar::new(num_rows as u64)
-        .with_message("Processing ASCII file")
+        .with_message("Processing ASCII files")
         .with_style(
             indicatif::ProgressStyle::default_bar()
                 .template("{spinner:.green} {msg} {wide_bar} {pos}/{len} ({eta})")
@@ -155,25 +188,30 @@ where
     let mut success_count = 0;
     let mut error_count = 0;
 
-    for result in reader.rows() {
-        match result {
-            Ok(obj) => {
-                match s.send(obj).await {
-                    Ok(_) => {
-                        progress_bar.inc(1);
+    for (file_idx, file_path) in files.iter().enumerate() {
+        println!("Processing file {}/{}: {}", file_idx + 1, files.len(), file_path);
+
+        let reader = open_table(file_path)?;
+
+        for result in reader.rows() {
+            match result {
+                Ok(obj) => {
+                    match s.send(obj).await {
+                        Ok(_) => {
+                            progress_bar.inc(1);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to send record to workers: {}", e);
+                            break;
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Failed to send record to workers: {}", e);
-                        break;
-                    }
+                    success_count += 1;
                 }
-                success_count += 1;
-            }
-            Err(e) => {
-                error_count += 1;
-                eprintln!("❌ Error: {}", e);
-                eprintln!();
-                break;
+                Err(e) => {
+                    error_count += 1;
+                    eprintln!("❌ Error in {}: {}", file_path, e);
+                    break;
+                }
             }
         }
     }

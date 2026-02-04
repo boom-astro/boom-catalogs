@@ -3,6 +3,7 @@ tqdm
 pandas
 pyarrow
 fastparquet
-dotenv
 astropy
 beautifulsoup4
+python-dotenv
+bs4
