@@ -7,3 +7,4 @@ astropy
 beautifulsoup4
 python-dotenv
 bs4
+astroquery
