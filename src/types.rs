@@ -527,6 +527,109 @@ impl HasCoordinates for CatWISE2020 {
     }
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AllWISE {
+    #[serde(rename(serialize = "_id"))]
+    pub source_id: String,
+    pub ra: f64,
+    pub dec: f64,
+    pub sigra: f64,
+    pub sigdec: f64,
+    pub w1mpro: Option<f64>,
+    pub w2mpro: Option<f64>,
+    pub w3mpro: Option<f64>,
+    pub w4mpro: Option<f64>,
+    pub w1sigmpro: Option<f64>,
+    pub w2sigmpro: Option<f64>,
+    pub w3sigmpro: Option<f64>,
+    pub w4sigmpro: Option<f64>,
+    pub w1rchi2: Option<f64>,
+    pub w2rchi2: Option<f64>,
+    pub pmra: Option<f64>,
+    pub pmdec: Option<f64>,
+    pub sigpmra: Option<f64>,
+    pub sigpmdec: Option<f64>,
+}
+
+impl ParquetRowBatch for AllWISE {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<AllWISE>> {
+        let source_id_series = df.column("source_id")?;
+        let ra_series = df.column("ra")?;
+        let dec_series = df.column("dec")?;
+        let sigra_series = df.column("sigra")?;
+        let sigdec_series = df.column("sigdec")?;
+        let w1mpro_series = df.column("w1mpro")?;
+        let w2mpro_series = df.column("w2mpro")?;
+        let w3mpro_series = df.column("w3mpro")?;
+        let w4mpro_series = df.column("w4mpro")?;
+        let w1sigmpro_series = df.column("w1sigmpro")?;
+        let w2sigmpro_series = df.column("w2sigmpro")?;
+        let w3sigmpro_series = df.column("w3sigmpro")?;
+        let w4sigmpro_series = df.column("w4sigmpro")?;
+        let w1rchi2_series = df.column("w1rchi2")?;
+        let w2rchi2_series = df.column("w2rchi2")?;
+        let pmra_series = df.column("pmra")?;
+        let pmdec_series = df.column("pmdec")?;
+        let sigpmra_series = df.column("sigpmra")?;
+        let sigpmdec_series = df.column("sigpmdec")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            let source_id = source_id_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing source_id at row {}", i))?
+                .to_string();
+            let ra = ra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing ra at row {}", i))?;
+            let dec = dec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
+            let sigra = sigra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigra at row {}", i))?;
+            let sigdec = sigdec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing sigdec at row {}", i))?;
+
+            results.push(AllWISE {
+                source_id,
+                ra,
+                dec,
+                sigra,
+                sigdec,
+                w1mpro: w1mpro_series.f64()?.get(i),
+                w2mpro: w2mpro_series.f64()?.get(i),
+                w3mpro: w3mpro_series.f64()?.get(i),
+                w4mpro: w4mpro_series.f64()?.get(i),
+                w1sigmpro: w1sigmpro_series.f64()?.get(i),
+                w2sigmpro: w2sigmpro_series.f64()?.get(i),
+                w3sigmpro: w3sigmpro_series.f64()?.get(i),
+                w4sigmpro: w4sigmpro_series.f64()?.get(i),
+                w1rchi2: w1rchi2_series.f64()?.get(i),
+                w2rchi2: w2rchi2_series.f64()?.get(i),
+                pmra: pmra_series.f64()?.get(i),
+                pmdec: pmdec_series.f64()?.get(i),
+                sigpmra: sigpmra_series.f64()?.get(i),
+                sigpmdec: sigpmdec_series.f64()?.get(i),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for AllWISE {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[serde_as]
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
@@ -822,6 +925,7 @@ pub enum CsvCatalogs {
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
+    AllWISE,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
