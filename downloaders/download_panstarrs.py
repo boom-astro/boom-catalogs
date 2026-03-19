@@ -74,6 +74,11 @@ def download_partition(arguments):
                 columns=PANSTARRS_COLUMNS,
             )
             partition_df = catalog.get_partition(pixel_order, pixel_pixel).compute()
+            partition_df = (
+                partition_df
+                .sort_values("primaryDetection", ascending=False)
+                .drop_duplicates("objID", keep="first")
+            )
             partition_df.to_parquet(out_path)
             del partition_df
             return
