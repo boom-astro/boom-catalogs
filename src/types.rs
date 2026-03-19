@@ -943,7 +943,7 @@ pub struct PanSTARRS {
     pub i_moment_xy: Option<f64>,
     pub z_moment_xy: Option<f64>,
     pub y_moment_xy: Option<f64>,
-    pub n_detections: i32,
+    pub n_detections: i16,
     pub primary_detection: i64,
     pub g_kron_rad: Option<f64>,
     pub r_kron_rad: Option<f64>,
@@ -1032,7 +1032,7 @@ impl ParquetRowBatch for PanSTARRS {
                 i_moment_xy: i_moment_xy.f64()?.get(i),
                 z_moment_xy: z_moment_xy.f64()?.get(i),
                 y_moment_xy: y_moment_xy.f64()?.get(i),
-                n_detections: n_detections.i32()?.get(i)
+                n_detections: n_detections.i16()?.get(i)
                     .ok_or_else(|| anyhow::anyhow!("Missing nDetections at row {}", i))?,
                 primary_detection: primary_detection.i64()?.get(i)
                     .ok_or_else(|| anyhow::anyhow!("Missing primaryDetection at row {}", i))?,
