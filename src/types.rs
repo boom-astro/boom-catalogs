@@ -920,12 +920,159 @@ pub enum CsvCatalogs {
     Galex,
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PanSTARRS {
+    #[serde(rename(serialize = "_id"))]
+    pub obj_id: i64,
+    pub ra_mean: f64,
+    pub dec_mean: f64,
+    pub i_psf_mag: Option<f64>,
+    pub g_moment_xx: Option<f64>,
+    pub r_moment_xx: Option<f64>,
+    pub i_moment_xx: Option<f64>,
+    pub z_moment_xx: Option<f64>,
+    pub y_moment_xx: Option<f64>,
+    pub g_moment_yy: Option<f64>,
+    pub r_moment_yy: Option<f64>,
+    pub i_moment_yy: Option<f64>,
+    pub z_moment_yy: Option<f64>,
+    pub y_moment_yy: Option<f64>,
+    pub g_moment_xy: Option<f64>,
+    pub r_moment_xy: Option<f64>,
+    pub i_moment_xy: Option<f64>,
+    pub z_moment_xy: Option<f64>,
+    pub y_moment_xy: Option<f64>,
+    pub n_detections: i32,
+    pub primary_detection: i64,
+    pub g_kron_rad: Option<f64>,
+    pub r_kron_rad: Option<f64>,
+    pub i_kron_rad: Option<f64>,
+    pub z_kron_rad: Option<f64>,
+    pub y_kron_rad: Option<f64>,
+    pub g_kron_mag: Option<f64>,
+    pub r_kron_mag: Option<f64>,
+    pub i_kron_mag: Option<f64>,
+    pub z_kron_mag: Option<f64>,
+    pub y_kron_mag: Option<f64>,
+    pub g_kron_mag_err: Option<f64>,
+    pub r_kron_mag_err: Option<f64>,
+    pub i_kron_mag_err: Option<f64>,
+    pub z_kron_mag_err: Option<f64>,
+    pub y_kron_mag_err: Option<f64>,
+    pub r_ext_n_sigma: Option<f64>,
+    pub i_ext_n_sigma: Option<f64>,
+    pub z_ext_n_sigma: Option<f64>,
+}
+
+impl ParquetRowBatch for PanSTARRS {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<PanSTARRS>> {
+        let obj_id = df.column("objID")?;
+        let ra_mean = df.column("raMean")?;
+        let dec_mean = df.column("decMean")?;
+        let i_psf_mag = df.column("iPSFMag")?;
+        let g_moment_xx = df.column("gmomentXX")?;
+        let r_moment_xx = df.column("rmomentXX")?;
+        let i_moment_xx = df.column("imomentXX")?;
+        let z_moment_xx = df.column("zmomentXX")?;
+        let y_moment_xx = df.column("ymomentXX")?;
+        let g_moment_yy = df.column("gmomentYY")?;
+        let r_moment_yy = df.column("rmomentYY")?;
+        let i_moment_yy = df.column("imomentYY")?;
+        let z_moment_yy = df.column("zmomentYY")?;
+        let y_moment_yy = df.column("ymomentYY")?;
+        let g_moment_xy = df.column("gmomentXY")?;
+        let r_moment_xy = df.column("rmomentXY")?;
+        let i_moment_xy = df.column("imomentXY")?;
+        let z_moment_xy = df.column("zmomentXY")?;
+        let y_moment_xy = df.column("ymomentXY")?;
+        let n_detections = df.column("nDetections")?;
+        let primary_detection = df.column("primaryDetection")?;
+        let g_kron_rad = df.column("gKronRad")?;
+        let r_kron_rad = df.column("rKronRad")?;
+        let i_kron_rad = df.column("iKronRad")?;
+        let z_kron_rad = df.column("zKronRad")?;
+        let y_kron_rad = df.column("yKronRad")?;
+        let g_kron_mag = df.column("gKronMag")?;
+        let r_kron_mag = df.column("rKronMag")?;
+        let i_kron_mag = df.column("iKronMag")?;
+        let z_kron_mag = df.column("zKronMag")?;
+        let y_kron_mag = df.column("yKronMag")?;
+        let g_kron_mag_err = df.column("gKronMagErr")?;
+        let r_kron_mag_err = df.column("rKronMagErr")?;
+        let i_kron_mag_err = df.column("iKronMagErr")?;
+        let z_kron_mag_err = df.column("zKronMagErr")?;
+        let y_kron_mag_err = df.column("yKronMagErr")?;
+        let r_ext_n_sigma = df.column("rExtNSigma")?;
+        let i_ext_n_sigma = df.column("iExtNSigma")?;
+        let z_ext_n_sigma = df.column("zExtNSigma")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            results.push(PanSTARRS {
+                obj_id: obj_id.i64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing objID at row {}", i))?,
+                ra_mean: ra_mean.f64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing raMean at row {}", i))?,
+                dec_mean: dec_mean.f64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing decMean at row {}", i))?,
+                i_psf_mag: i_psf_mag.f64()?.get(i),
+                g_moment_xx: g_moment_xx.f64()?.get(i),
+                r_moment_xx: r_moment_xx.f64()?.get(i),
+                i_moment_xx: i_moment_xx.f64()?.get(i),
+                z_moment_xx: z_moment_xx.f64()?.get(i),
+                y_moment_xx: y_moment_xx.f64()?.get(i),
+                g_moment_yy: g_moment_yy.f64()?.get(i),
+                r_moment_yy: r_moment_yy.f64()?.get(i),
+                i_moment_yy: i_moment_yy.f64()?.get(i),
+                z_moment_yy: z_moment_yy.f64()?.get(i),
+                y_moment_yy: y_moment_yy.f64()?.get(i),
+                g_moment_xy: g_moment_xy.f64()?.get(i),
+                r_moment_xy: r_moment_xy.f64()?.get(i),
+                i_moment_xy: i_moment_xy.f64()?.get(i),
+                z_moment_xy: z_moment_xy.f64()?.get(i),
+                y_moment_xy: y_moment_xy.f64()?.get(i),
+                n_detections: n_detections.i32()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing nDetections at row {}", i))?,
+                primary_detection: primary_detection.i64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing primaryDetection at row {}", i))?,
+                g_kron_rad: g_kron_rad.f64()?.get(i),
+                r_kron_rad: r_kron_rad.f64()?.get(i),
+                i_kron_rad: i_kron_rad.f64()?.get(i),
+                z_kron_rad: z_kron_rad.f64()?.get(i),
+                y_kron_rad: y_kron_rad.f64()?.get(i),
+                g_kron_mag: g_kron_mag.f64()?.get(i),
+                r_kron_mag: r_kron_mag.f64()?.get(i),
+                i_kron_mag: i_kron_mag.f64()?.get(i),
+                z_kron_mag: z_kron_mag.f64()?.get(i),
+                y_kron_mag: y_kron_mag.f64()?.get(i),
+                g_kron_mag_err: g_kron_mag_err.f64()?.get(i),
+                r_kron_mag_err: r_kron_mag_err.f64()?.get(i),
+                i_kron_mag_err: i_kron_mag_err.f64()?.get(i),
+                z_kron_mag_err: z_kron_mag_err.f64()?.get(i),
+                y_kron_mag_err: y_kron_mag_err.f64()?.get(i),
+                r_ext_n_sigma: r_ext_n_sigma.f64()?.get(i),
+                i_ext_n_sigma: i_ext_n_sigma.f64()?.get(i),
+                z_ext_n_sigma: z_ext_n_sigma.f64()?.get(i),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for PanSTARRS {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
     AllWISE,
+    PanSTARRS,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
