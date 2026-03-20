@@ -925,7 +925,9 @@ pub enum CsvCatalogs {
 pub struct PanSTARRS {
     #[serde(rename(serialize = "_id"))]
     pub obj_id: i64,
+    #[serde(rename(serialize = "ra"))]
     pub ra_mean: f64,
+    #[serde(rename(serialize = "dec"))]
     pub dec_mean: f64,
     pub i_psf_mag: Option<f64>,
     pub g_moment_xx: Option<f64>,
