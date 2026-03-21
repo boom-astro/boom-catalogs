@@ -38,7 +38,8 @@ LSDR10_COLUMNS = [
     "Z_SPEC",
 ]
 
-BASE_URL = "https://data.lsdb.io/hats/legacysurvey_dr10.1"
+CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey_dr10.1"
+DATASET_URL = f"{CATALOG_BASE}/dataset"
 
 parser = argparse.ArgumentParser(description="Download Legacy Survey DR10.1 catalog parquet files in parallel.")
 parser.add_argument("--output-dir", type=str, default=LSDR10_OUTPUT_DIR, help="Directory to save downloaded files")
@@ -47,7 +48,7 @@ parser.add_argument("--processes", type=int, default=32, help="Number of paralle
 
 def get_partitions():
     """Fetch partition list from HATS partition_info.csv."""
-    url = f"{BASE_URL}/partition_info.csv"
+    url = f"{CATALOG_BASE}/partition_info.csv"
     resp = requests.get(url, timeout=30)
     resp.raise_for_status()
     lines = resp.text.strip().split("\n")
@@ -68,7 +69,7 @@ def download_partition(arguments):
         return
     # HATS URL pattern: Norder=N/Dir=D/Npix=P.parquet
     dir_val = (pixel // 10000) * 10000
-    url = f"{BASE_URL}/Norder={order}/Dir={dir_val}/Npix={pixel}.parquet"
+    url = f"{DATASET_URL}/Norder={order}/Dir={dir_val}/Npix={pixel}.parquet"
     for attempt in range(5):
         try:
             resp = requests.get(url, timeout=60)
