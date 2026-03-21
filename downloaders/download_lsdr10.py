@@ -1,18 +1,18 @@
-"""Script to download Legacy Survey DR10.1 catalog as parquet files using lsdb."""
+"""Script to download Legacy Survey DR10.1 catalog parquet files in parallel."""
 import os
+import time
 import argparse
-
 import lsdb
+
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import cpu_count
 from dotenv import load_dotenv
 
 load_dotenv()
-OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR', '.')}/ls_dr10/"
+LSDR10_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr10/"
 
-parser = argparse.ArgumentParser(description="Download Legacy Survey DR10.1 catalog as parquet files.")
-parser.add_argument("--output-dir", type=str, default=OUTPUT_DIR, help="Directory to save downloaded parquet files")
-parser.add_argument("--batch-size", type=int, default=1_000_000, help="Number of rows per output parquet file")
-
-COLUMNS = [
+LSDR10_COLUMNS = [
     "OBJID",
     "SHAPE_R",
     "SHAPE_R_IVAR",
@@ -38,34 +38,55 @@ COLUMNS = [
 
 CATALOG_URL = "https://data.lsdb.io/hats/legacysurvey_dr10.1"
 
+parser = argparse.ArgumentParser(description="Download Legacy Survey DR10.1 catalog parquet files in parallel.")
+parser.add_argument("--output-dir", type=str, default=LSDR10_OUTPUT_DIR, help="Directory to save downloaded files")
+parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
-def download_catalog(output_dir, batch_size):
-    os.makedirs(output_dir, exist_ok=True)
-
-    print(f"Opening catalog from {CATALOG_URL}...")
-    catalog = lsdb.open_catalog(CATALOG_URL, columns=COLUMNS)
-    print(f"Catalog has {catalog.__len__()} rows")
-    print(f"Columns: {catalog.columns.tolist()}")
-
-    print(f"Computing and saving to parquet in {output_dir}...")
-    df = catalog.compute()
-
-    # rename columns to lowercase
-    df.columns = [c.lower() for c in df.columns]
-
-    total_rows = len(df)
-    file_idx = 0
-    for start in range(0, total_rows, batch_size):
-        end = min(start + batch_size, total_rows)
-        chunk = df.iloc[start:end]
-        out_path = os.path.join(output_dir, f"lsdr10_{file_idx:04d}.parquet")
-        chunk.to_parquet(out_path, index=False)
-        print(f"Wrote {len(chunk)} rows to {out_path}")
-        file_idx += 1
-
-    print(f"Done. Wrote {total_rows} rows across {file_idx} files.")
-
+def download_partition(arguments):
+    pixel_order, pixel_pixel, output_dir = arguments
+    out_path = os.path.join(output_dir, f"batch_order{pixel_order}_pix{pixel_pixel}.parquet")
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+        return
+    for attempt in range(5):
+        try:
+            catalog = lsdb.open_catalog(
+                CATALOG_URL,
+                columns=LSDR10_COLUMNS,
+            )
+            partition_df = catalog.get_partition(pixel_order, pixel_pixel).compute()
+            # rename columns to lowercase
+            partition_df.columns = [c.lower() for c in partition_df.columns]
+            partition_df.to_parquet(out_path)
+            del partition_df
+            return
+        except Exception as e:
+            if attempt < 4:
+                time.sleep(2 ** attempt)
+            else:
+                raise RuntimeError(
+                    f"Failed partition order={pixel_order} pixel={pixel_pixel} after 5 attempts: {e}"
+                ) from e
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    download_catalog(args.output_dir, args.batch_size)
+    output_dir = args.output_dir
+    nb_processes = min(args.processes, cpu_count() - 2)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    catalog = lsdb.open_catalog(
+        CATALOG_URL,
+        columns=LSDR10_COLUMNS,
+    )
+    pixels = catalog.get_healpix_pixels()
+    print(f"Found {len(pixels)} partitions to download.")
+
+    with tqdm(total=len(pixels)) as pbar:
+        with ThreadPoolExecutor(max_workers=nb_processes) as pool:
+            futures = [
+                pool.submit(download_partition, (pixel.order, pixel.pixel, output_dir))
+                for pixel in pixels
+            ]
+            for future in futures:
+                future.result()
+                pbar.update()
