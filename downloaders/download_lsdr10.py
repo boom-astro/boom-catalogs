@@ -2,6 +2,7 @@
 import os
 import time
 import argparse
+import threading
 import lsdb
 
 from tqdm import tqdm
@@ -42,6 +43,17 @@ parser = argparse.ArgumentParser(description="Download Legacy Survey DR10.1 cata
 parser.add_argument("--output-dir", type=str, default=LSDR10_OUTPUT_DIR, help="Directory to save downloaded files")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
+# Thread-local storage so each thread opens the catalog once
+_thread_local = threading.local()
+
+def _get_catalog():
+    if not hasattr(_thread_local, "catalog"):
+        _thread_local.catalog = lsdb.open_catalog(
+            CATALOG_URL,
+            columns=LSDR10_COLUMNS,
+        )
+    return _thread_local.catalog
+
 def download_partition(arguments):
     pixel_order, pixel_pixel, output_dir = arguments
     out_path = os.path.join(output_dir, f"batch_order{pixel_order}_pix{pixel_pixel}.parquet")
@@ -49,10 +61,7 @@ def download_partition(arguments):
         return
     for attempt in range(5):
         try:
-            catalog = lsdb.open_catalog(
-                CATALOG_URL,
-                columns=LSDR10_COLUMNS,
-            )
+            catalog = _get_catalog()
             partition_df = catalog.get_partition(pixel_order, pixel_pixel).compute()
             # rename columns to lowercase
             partition_df.columns = [c.lower() for c in partition_df.columns]
@@ -60,6 +69,8 @@ def download_partition(arguments):
             del partition_df
             return
         except Exception as e:
+            # reset catalog on failure so next attempt gets a fresh one
+            _thread_local.catalog = None
             if attempt < 4:
                 time.sleep(2 ** attempt)
             else:
