@@ -1048,11 +1048,8 @@ pub enum CsvCatalogs {
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
-<<<<<<< HEAD
     AllWISE,
-=======
     LSDR10,
->>>>>>> 7c43e2c (adding LS DR10 catalog)
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
