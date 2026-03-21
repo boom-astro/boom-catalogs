@@ -630,6 +630,129 @@ impl HasCoordinates for AllWISE {
     }
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LSDR10 {
+    #[serde(rename(serialize = "_id"))]
+    pub objid: i64,
+    pub ra: f64,
+    pub dec: f64,
+    pub ra_ivar: Option<f32>,
+    pub dec_ivar: Option<f32>,
+    #[serde(rename(deserialize = "type"))]
+    pub objtype: String,
+    pub flux_r: Option<f32>,
+    pub nobs_g: Option<i32>,
+    pub nobs_r: Option<i32>,
+    pub nobs_z: Option<i32>,
+    pub fitbits: Option<i32>,
+    pub shape_r: Option<f32>,
+    pub shape_r_ivar: Option<f32>,
+    pub shape_e1: Option<f32>,
+    pub shape_e1_ivar: Option<f32>,
+    pub shape_e2: Option<f32>,
+    pub shape_e2_ivar: Option<f32>,
+    pub mw_transmission_r: Option<f32>,
+    pub z_phot_mean: Option<f64>,
+    pub z_phot_std: Option<f64>,
+    pub z_spec: Option<f64>,
+}
+
+impl ParquetRowBatch for LSDR10 {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
+        let objid_series = df.column("objid")?;
+        let ra_series = df.column("ra")?;
+        let dec_series = df.column("dec")?;
+        let ra_ivar_series = df.column("ra_ivar")?;
+        let dec_ivar_series = df.column("dec_ivar")?;
+        let type_series = df.column("type")?;
+        let flux_r_series = df.column("flux_r")?;
+        let nobs_g_series = df.column("nobs_g")?;
+        let nobs_r_series = df.column("nobs_r")?;
+        let nobs_z_series = df.column("nobs_z")?;
+        let fitbits_series = df.column("fitbits")?;
+        let shape_r_series = df.column("shape_r")?;
+        let shape_r_ivar_series = df.column("shape_r_ivar")?;
+        let shape_e1_series = df.column("shape_e1")?;
+        let shape_e1_ivar_series = df.column("shape_e1_ivar")?;
+        let shape_e2_series = df.column("shape_e2")?;
+        let shape_e2_ivar_series = df.column("shape_e2_ivar")?;
+        let mw_transmission_r_series = df.column("mw_transmission_r")?;
+        let z_phot_mean_series = df.column("z_phot_mean")?;
+        let z_phot_std_series = df.column("z_phot_std")?;
+        let z_spec_series = df.column("z_spec")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            let objid = objid_series
+                .i64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
+            let ra = ra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing ra at row {}", i))?;
+            let dec = dec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
+            let ra_ivar = ra_ivar_series.f32()?.get(i);
+            let dec_ivar = dec_ivar_series.f32()?.get(i);
+            let objtype = type_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
+                .to_string();
+            let flux_r = flux_r_series.f32()?.get(i);
+            let nobs_g = nobs_g_series.i32()?.get(i);
+            let nobs_r = nobs_r_series.i32()?.get(i);
+            let nobs_z = nobs_z_series.i32()?.get(i);
+            let fitbits = fitbits_series.i32()?.get(i);
+            let shape_r = shape_r_series.f32()?.get(i);
+            let shape_r_ivar = shape_r_ivar_series.f32()?.get(i);
+            let shape_e1 = shape_e1_series.f32()?.get(i);
+            let shape_e1_ivar = shape_e1_ivar_series.f32()?.get(i);
+            let shape_e2 = shape_e2_series.f32()?.get(i);
+            let shape_e2_ivar = shape_e2_ivar_series.f32()?.get(i);
+            let mw_transmission_r = mw_transmission_r_series.f32()?.get(i);
+            let z_phot_mean = z_phot_mean_series.f64()?.get(i);
+            let z_phot_std = z_phot_std_series.f64()?.get(i);
+            let z_spec = z_spec_series.f64()?.get(i);
+
+            results.push(LSDR10 {
+                objid,
+                ra,
+                dec,
+                ra_ivar,
+                dec_ivar,
+                objtype,
+                flux_r,
+                nobs_g,
+                nobs_r,
+                nobs_z,
+                fitbits,
+                shape_r,
+                shape_r_ivar,
+                shape_e1,
+                shape_e1_ivar,
+                shape_e2,
+                shape_e2_ivar,
+                mw_transmission_r,
+                z_phot_mean,
+                z_phot_std,
+                z_spec,
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for LSDR10 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[serde_as]
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
@@ -925,7 +1048,11 @@ pub enum CsvCatalogs {
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
+<<<<<<< HEAD
     AllWISE,
+=======
+    LSDR10,
+>>>>>>> 7c43e2c (adding LS DR10 catalog)
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
