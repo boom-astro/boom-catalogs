@@ -653,9 +653,9 @@ pub struct LSDR10 {
     pub shape_e2: Option<f32>,
     pub shape_e2_ivar: Option<f32>,
     pub mw_transmission_r: Option<f32>,
-    pub z_phot_mean: Option<f64>,
-    pub z_phot_std: Option<f64>,
-    pub z_spec: Option<f64>,
+    pub z_phot_mean: Option<f32>,
+    pub z_phot_std: Option<f32>,
+    pub z_spec: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -715,9 +715,9 @@ impl ParquetRowBatch for LSDR10 {
             let shape_e2 = shape_e2_series.f32()?.get(i);
             let shape_e2_ivar = shape_e2_ivar_series.f32()?.get(i);
             let mw_transmission_r = mw_transmission_r_series.f32()?.get(i);
-            let z_phot_mean = z_phot_mean_series.f64()?.get(i);
-            let z_phot_std = z_phot_std_series.f64()?.get(i);
-            let z_spec = z_spec_series.f64()?.get(i);
+            let z_phot_mean = z_phot_mean_series.f32()?.get(i);
+            let z_phot_std = z_phot_std_series.f32()?.get(i);
+            let z_spec = z_spec_series.f32()?.get(i);
 
             results.push(LSDR10 {
                 objid,
