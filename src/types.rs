@@ -685,9 +685,9 @@ impl ParquetRowBatch for LSDR10 {
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
             let objid = objid_series
-                .i64()?
+                .i32()?
                 .get(i)
-                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))? as i64;
             let ra = ra_series
                 .f64()?
                 .get(i)
