@@ -15,6 +15,8 @@ load_dotenv()
 LSDR10_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr10/"
 
 LSDR10_COLUMNS = [
+    "RELEASE",
+    "BRICKID",
     "OBJID",
     "SHAPE_R",
     "SHAPE_R_IVAR",
