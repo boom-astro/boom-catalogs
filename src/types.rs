@@ -634,7 +634,7 @@ impl HasCoordinates for AllWISE {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LSDR10 {
     #[serde(rename(serialize = "_id"))]
-    pub objid: i64,
+    pub id: String,
     pub ra: f64,
     pub dec: f64,
     pub ra_ivar: Option<f32>,
@@ -660,6 +660,8 @@ pub struct LSDR10 {
 
 impl ParquetRowBatch for LSDR10 {
     fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
+        let release_series = df.column("release")?;
+        let brickid_series = df.column("brickid")?;
         let objid_series = df.column("objid")?;
         let ra_series = df.column("ra")?;
         let dec_series = df.column("dec")?;
@@ -684,10 +686,19 @@ impl ParquetRowBatch for LSDR10 {
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
+            let release = release_series
+                .i16()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing release at row {}", i))? as i32;
+            let brickid = brickid_series
+                .i32()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing brickid at row {}", i))?;
             let objid = objid_series
                 .i32()?
                 .get(i)
-                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))? as i64;
+                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
+            let id = format!("{}_{}_{}",  release, brickid, objid);
             let ra = ra_series
                 .f64()?
                 .get(i)
@@ -720,7 +731,7 @@ impl ParquetRowBatch for LSDR10 {
             let z_spec = z_spec_series.f32()?.get(i);
 
             results.push(LSDR10 {
-                objid,
+                id,
                 ra,
                 dec,
                 ra_ivar,
