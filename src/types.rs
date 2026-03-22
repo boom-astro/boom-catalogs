@@ -704,10 +704,10 @@ impl ParquetRowBatch for LSDR10 {
                 .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
                 .to_string();
             let flux_r = flux_r_series.f32()?.get(i);
-            let nobs_g = nobs_g_series.i32()?.get(i);
-            let nobs_r = nobs_r_series.i32()?.get(i);
-            let nobs_z = nobs_z_series.i32()?.get(i);
-            let fitbits = fitbits_series.i32()?.get(i);
+            let nobs_g = nobs_g_series.i16()?.get(i).map(|v| v as i32);
+            let nobs_r = nobs_r_series.i16()?.get(i).map(|v| v as i32);
+            let nobs_z = nobs_z_series.i16()?.get(i).map(|v| v as i32);
+            let fitbits = fitbits_series.i16()?.get(i).map(|v| v as i32);
             let shape_r = shape_r_series.f32()?.get(i);
             let shape_r_ivar = shape_r_ivar_series.f32()?.get(i);
             let shape_e1 = shape_e1_series.f32()?.get(i);
