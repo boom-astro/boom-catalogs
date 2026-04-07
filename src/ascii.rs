@@ -3,10 +3,10 @@ use crate::types::HasCoordinates;
 use anyhow::Result;
 use indicatif::ProgressBar;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::fs;
 
 // Example usage to find the correct column positions:
 // Uncomment this function and call it to help determine column positions
@@ -189,7 +189,12 @@ where
     let mut error_count = 0;
 
     for (file_idx, file_path) in files.iter().enumerate() {
-        println!("Processing file {}/{}: {}", file_idx + 1, files.len(), file_path);
+        println!(
+            "Processing file {}/{}: {}",
+            file_idx + 1,
+            files.len(),
+            file_path
+        );
 
         let reader = open_table(file_path)?;
 
