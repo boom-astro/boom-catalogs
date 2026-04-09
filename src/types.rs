@@ -264,6 +264,51 @@ impl HasCoordinates for Ned {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Default, Serialize, Deserialize, Debug)]
+pub struct ERosita {
+    #[serde(rename(serialize = "_id"))]
+    iauname: String,
+    ra: f64,
+    dec: f64,
+    ml_flux_1: f32,
+    ml_flux_err_1: f32,
+}
+
+impl FitsRowBatch for ERosita {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<ERosita>> {
+        let iauname_col: Vec<String> = hdu.read_col_range(fptr, "IAUNAME", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "DEC", &range)?;
+        let ml_flux_1_col: Vec<f32> = hdu.read_col_range(fptr, "ML_FLUX_1", &range)?;
+        let ml_flux_err_1_col: Vec<f32> = hdu.read_col_range(fptr, "ML_FLUX_ERR_1", &range)?;
+
+        // Combine the columns into a Vec<Row>
+        let mut rows = Vec::with_capacity(iauname_col.len());
+        for i in 0..iauname_col.len() {
+            rows.push(ERosita {
+                iauname: iauname_col[i].trim_matches('\0').trim().to_string(),
+                ra: ra_col[i],
+                dec: dec_col[i],
+                ml_flux_1: ml_flux_1_col[i],
+                ml_flux_err_1: ml_flux_err_1_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for ERosita {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VSX {
     #[serde(rename = "_id")]
@@ -909,6 +954,7 @@ impl HasCoordinates for TwoMass {
 pub enum FitsCatalogs {
     Ned,
     Milliquas,
+    ERosita,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
