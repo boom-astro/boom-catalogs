@@ -959,7 +959,7 @@ pub struct UVGapsXGaia {
     pub ra_gaia: f64,
     #[serde(rename(serialize = "dec"))]
     pub dec_gaia: f64,
-    pub nuv: Option<f64>,
+    pub nuv: f64,
 }
 
 impl FitsRowBatch for UVGapsXGaia {
