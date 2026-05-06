@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boom_catalogs::fits::process_fits;
-use boom_catalogs::types::{ERosita, FitsCatalogs, Milliquas, Ned};
+use boom_catalogs::types::{ERosita, FitsCatalogs, Milliquas, Ned, UVGapsXGaia};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -84,6 +84,20 @@ async fn main() -> Result<()> {
         }
         FitsCatalogs::ERosita => {
             process_fits::<ERosita>(
+                args.uri,
+                args.db,
+                args.collection,
+                args.path,
+                args.num_workers,
+                args.batch_size,
+                args.channel_capacity,
+                args.drop_existing_collection,
+                args.init_indexes,
+            )
+            .await?;
+        }
+        FitsCatalogs::UVGapsXGaia => {
+            process_fits::<UVGapsXGaia>(
                 args.uri,
                 args.db,
                 args.collection,
