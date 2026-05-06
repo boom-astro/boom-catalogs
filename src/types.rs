@@ -949,12 +949,56 @@ impl HasCoordinates for TwoMass {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UVGapsXGaia {
+    #[serde(rename(serialize = "_id"))]
+    pub source_id: i64,
+    #[serde(rename(serialize = "ra"))]
+    pub ra_gaia: f64,
+    #[serde(rename(serialize = "dec"))]
+    pub dec_gaia: f64,
+    pub nuv: f64,
+}
+
+impl FitsRowBatch for UVGapsXGaia {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<UVGapsXGaia>> {
+        let source_id_col: Vec<i64> = hdu.read_col_range(fptr, "source_id", &range)?;
+        let ra_gaia_col: Vec<f64> = hdu.read_col_range(fptr, "ra_gaia", &range)?;
+        let dec_gaia_col: Vec<f64> = hdu.read_col_range(fptr, "dec_gaia", &range)?;
+        let nuv_col: Vec<f64> = hdu.read_col_range(fptr, "nuv", &range)?;
+
+        let mut rows = Vec::with_capacity(source_id_col.len());
+        for i in 0..source_id_col.len() {
+            rows.push(UVGapsXGaia {
+                source_id: source_id_col[i],
+                ra_gaia: ra_gaia_col[i],
+                dec_gaia: dec_gaia_col[i],
+                nuv: nuv_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for UVGapsXGaia {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
     Ned,
     Milliquas,
     ERosita,
+    UVGapsXGaia,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
