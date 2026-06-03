@@ -992,6 +992,81 @@ impl HasCoordinates for UVGapsXGaia {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DesiDr1 {
+    #[serde(rename(serialize = "_id"))]
+    pub targetid: i64,
+    pub ra: f64,
+    pub dec: f64,
+    pub survey: String,
+    pub program: String,
+    pub z: f64,
+    pub zerr: f64,
+    pub zwarn: i64,
+    pub chi2: f64,
+    pub deltachi2: f64,
+    pub spectype: String,
+    pub subtype: Option<String>,
+    pub zcat_nspec: i32,
+}
+
+impl HasCoordinates for DesiDr1 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+impl FitsRowBatch for DesiDr1 {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<DesiDr1>> {
+        let targetid_col: Vec<i64> = hdu.read_col_range(fptr, "TARGETID", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_DEC", &range)?;
+        let survey_col: Vec<String> = hdu.read_col_range(fptr, "SURVEY", &range)?;
+        let program_col: Vec<String> = hdu.read_col_range(fptr, "PROGRAM", &range)?;
+        let z_col: Vec<f64> = hdu.read_col_range(fptr, "Z", &range)?;
+        let zerr_col: Vec<f64> = hdu.read_col_range(fptr, "ZERR", &range)?;
+        let zwarn_col: Vec<i64> = hdu.read_col_range(fptr, "ZWARN", &range)?;
+        let chi2_col: Vec<f64> = hdu.read_col_range(fptr, "CHI2", &range)?;
+        let deltachi2_col: Vec<f64> = hdu.read_col_range(fptr, "DELTACHI2", &range)?;
+        let spectype_col: Vec<String> = hdu.read_col_range(fptr, "SPECTYPE", &range)?;
+        let subtype_col: Vec<String> = hdu.read_col_range(fptr, "SUBTYPE", &range)?;
+        let zcat_primary_col: Vec<bool> = hdu.read_col_range(fptr, "ZCAT_PRIMARY", &range)?;
+        let zcat_nspec_col: Vec<i32> = hdu.read_col_range(fptr, "ZCAT_NSPEC", &range)?;
+
+        let mut rows = Vec::with_capacity(targetid_col.len());
+        for i in 0..targetid_col.len() {
+            if !zcat_primary_col[i] {
+                continue;
+            }
+            rows.push(DesiDr1 {
+                targetid: targetid_col[i],
+                ra: ra_col[i],
+                dec: dec_col[i],
+                survey: survey_col[i].trim().to_string(),
+                program: program_col[i].trim().to_string(),
+                z: z_col[i],
+                zerr: zerr_col[i],
+                zwarn: zwarn_col[i],
+                chi2: chi2_col[i],
+                deltachi2: deltachi2_col[i],
+                spectype: spectype_col[i].trim().to_string(),
+                subtype: {
+                    let s = subtype_col[i].trim().to_string();
+                    if s.is_empty() { None } else { Some(s) }
+                },
+                zcat_nspec: zcat_nspec_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
@@ -999,6 +1074,7 @@ pub enum FitsCatalogs {
     Milliquas,
     ERosita,
     UVGapsXGaia,
+    DesiDr1,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
