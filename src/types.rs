@@ -992,6 +992,182 @@ impl HasCoordinates for UVGapsXGaia {
     }
 }
 
+// DESI DR1 spec-z, from the iron `zall-tilecumulative-iron.fits` zcatalog.
+// HDU 1 (ZCATALOG): 30,304,000 rows x 148 columns. Full schema in the DESI datamodel:
+//   https://desidatamodel.readthedocs.io/en/latest/DESI_SPECTRO_REDUX/SPECPROD/zcatalog/VERSION/zall-tilecumulative-SPECPROD.html
+//
+// Row FILTERS applied in `read_batch`:
+//   - keep only ZCAT_PRIMARY == true  (one best spectrum per target)
+//   - drop TARGETID < 0  (sky / non-science fibers: not unique, no real source, and
+//     often non-finite TARGET_RA/TARGET_DEC that the 2dsphere index would reject)
+//
+// FITS type codes: K=i64  J=i32  I=i16  B=u8  E=f32  D=f64  L=bool  nA=string(n chars)
+// `[KEPT -> field]` marks the 13 columns read into the struct; ZCAT_PRIMARY is read for
+// filtering only. Every other column is currently ignored.
+//
+//   TARGETID      K            [KEPT -> targetid (stored as `_id`)]
+//   SURVEY        7A           [KEPT -> survey (trimmed)]
+//   PROGRAM       6A           [KEPT -> program (trimmed)]
+//   FIRSTNIGHT    J
+//   LASTNIGHT     J
+//   SPGRPVAL      J
+//   Z             D            [KEPT -> z]
+//   ZERR          D            [KEPT -> zerr]
+//   ZWARN         K            [KEPT -> zwarn]
+//   CHI2          D            [KEPT -> chi2]
+//   COEFF         10D
+//   NPIXELS       K
+//   SPECTYPE      6A           [KEPT -> spectype (trimmed)]
+//   SUBTYPE       20A          [KEPT -> subtype (trimmed; empty -> None)]
+//   NCOEFF        K
+//   DELTACHI2     D            [KEPT -> deltachi2]
+//   PETAL_LOC     I
+//   DEVICE_LOC    J
+//   LOCATION      K
+//   FIBER         J
+//   COADD_FIBERSTATUS  J
+//   TARGET_RA     D   deg      [KEPT -> ra (also derives `coordinates.radec_geojson`)]
+//   TARGET_DEC    D   deg      [KEPT -> dec]
+//   PMRA          E   mas/yr
+//   PMDEC         E   mas/yr
+//   REF_EPOCH     E   yr
+//   LAMBDA_REF    E   Angstrom
+//   FA_TARGET     K
+//   FA_TYPE       B
+//   OBJTYPE       3A
+//   FIBERASSIGN_X E   mm
+//   FIBERASSIGN_Y E   mm
+//   PRIORITY      J
+//   SUBPRIORITY   D
+//   OBSCONDITIONS J
+//   RELEASE       I
+//   BRICKNAME     8A
+//   BRICKID       J
+//   BRICK_OBJID   J
+//   MORPHTYPE     4A
+//   EBV           E   mag
+//   FLUX_G/R/Z/W1/W2            E   nanomaggy
+//   FLUX_IVAR_G/R/Z/W1/W2       E   nanomaggy^-2
+//   FIBERFLUX_G/R/Z            E   nanomaggy
+//   FIBERTOTFLUX_G/R/Z        E   nanomaggy
+//   MASKBITS      I
+//   SERSIC        E
+//   SHAPE_R       E   arcsec
+//   SHAPE_E1      E
+//   SHAPE_E2      E
+//   REF_ID        K
+//   REF_CAT       2A
+//   GAIA_PHOT_G/BP/RP_MEAN_MAG  E   mag
+//   PARALLAX      E   mas
+//   PHOTSYS       1A
+//   PRIORITY_INIT K
+//   NUMOBS_INIT   K
+//   CMX_TARGET / DESI_TARGET / BGS_TARGET / MWS_TARGET / SCND_TARGET             K
+//   SV1_/SV2_/SV3_ {DESI,BGS,MWS,SCND}_TARGET                                    K
+//   PLATE_RA      D   deg
+//   PLATE_DEC     D   deg
+//   TILEID        J
+//   COADD_NUMEXP  I
+//   COADD_EXPTIME E   s
+//   COADD_NUMNIGHT I
+//   COADD_NUMTILE I
+//   MEAN_DELTA_X / RMS_DELTA_X / MEAN_DELTA_Y / RMS_DELTA_Y    E   mm
+//   MEAN_PSF_TO_FIBER_SPECFLUX  E
+//   MEAN_FIBER_X / MEAN_FIBER_Y E   mm
+//   MEAN_FIBER_RA  D  deg
+//   STD_FIBER_RA   E  arcsec
+//   MEAN_FIBER_DEC D  deg
+//   STD_FIBER_DEC  E  arcsec
+//   MIN_MJD / MAX_MJD / MEAN_MJD     D
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}_{B,R,Z}   E
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}           E   (camera-summed)
+//   MAIN_NSPEC    I
+//   MAIN_PRIMARY  L
+//   SV_NSPEC      I
+//   SV_PRIMARY    L
+//   ZCAT_NSPEC    I            [KEPT -> zcat_nspec]
+//   ZCAT_PRIMARY  L            (read for the primary filter; not stored)
+//   DESINAME      22A
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DesiDr1 {
+    #[serde(rename(serialize = "_id"))]
+    pub targetid: i64,
+    pub ra: f64,
+    pub dec: f64,
+    pub survey: String,
+    pub program: String,
+    pub z: f64,
+    pub zerr: f64,
+    pub zwarn: i64,
+    pub chi2: f64,
+    pub deltachi2: f64,
+    pub spectype: String,
+    pub subtype: Option<String>,
+    pub zcat_nspec: i32,
+}
+
+impl HasCoordinates for DesiDr1 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+impl FitsRowBatch for DesiDr1 {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<DesiDr1>> {
+        let targetid_col: Vec<i64> = hdu.read_col_range(fptr, "TARGETID", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_DEC", &range)?;
+        let survey_col: Vec<String> = hdu.read_col_range(fptr, "SURVEY", &range)?;
+        let program_col: Vec<String> = hdu.read_col_range(fptr, "PROGRAM", &range)?;
+        let z_col: Vec<f64> = hdu.read_col_range(fptr, "Z", &range)?;
+        let zerr_col: Vec<f64> = hdu.read_col_range(fptr, "ZERR", &range)?;
+        let zwarn_col: Vec<i64> = hdu.read_col_range(fptr, "ZWARN", &range)?;
+        let chi2_col: Vec<f64> = hdu.read_col_range(fptr, "CHI2", &range)?;
+        let deltachi2_col: Vec<f64> = hdu.read_col_range(fptr, "DELTACHI2", &range)?;
+        let spectype_col: Vec<String> = hdu.read_col_range(fptr, "SPECTYPE", &range)?;
+        let subtype_col: Vec<String> = hdu.read_col_range(fptr, "SUBTYPE", &range)?;
+        let zcat_primary_col: Vec<bool> = hdu.read_col_range(fptr, "ZCAT_PRIMARY", &range)?;
+        let zcat_nspec_col: Vec<i32> = hdu.read_col_range(fptr, "ZCAT_NSPEC", &range)?;
+
+        let mut rows = Vec::with_capacity(targetid_col.len());
+        for i in 0..targetid_col.len() {
+            if !zcat_primary_col[i] {
+                continue;
+            }
+            // Skip sky/non-science fibers: they use negative sentinel TARGETIDs
+            // that are not unique and have no real source or redshift.
+            if targetid_col[i] < 0 {
+                continue;
+            }
+            rows.push(DesiDr1 {
+                targetid: targetid_col[i],
+                ra: ra_col[i],
+                dec: dec_col[i],
+                survey: survey_col[i].trim().to_string(),
+                program: program_col[i].trim().to_string(),
+                z: z_col[i],
+                zerr: zerr_col[i],
+                zwarn: zwarn_col[i],
+                chi2: chi2_col[i],
+                deltachi2: deltachi2_col[i],
+                spectype: spectype_col[i].trim().to_string(),
+                subtype: {
+                    let s = subtype_col[i].trim().to_string();
+                    if s.is_empty() { None } else { Some(s) }
+                },
+                zcat_nspec: zcat_nspec_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
@@ -999,6 +1175,7 @@ pub enum FitsCatalogs {
     Milliquas,
     ERosita,
     UVGapsXGaia,
+    DesiDr1,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
