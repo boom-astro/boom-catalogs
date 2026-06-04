@@ -992,6 +992,102 @@ impl HasCoordinates for UVGapsXGaia {
     }
 }
 
+// DESI DR1 spec-z, from the iron `zall-tilecumulative-iron.fits` zcatalog.
+// HDU 1 (ZCATALOG): 30,304,000 rows x 148 columns. Full schema in the DESI datamodel:
+//   https://desidatamodel.readthedocs.io/en/latest/DESI_SPECTRO_REDUX/SPECPROD/zcatalog/VERSION/zall-tilecumulative-SPECPROD.html
+//
+// Row FILTERS applied in `read_batch`:
+//   - keep only ZCAT_PRIMARY == true  (one best spectrum per target)
+//   - drop TARGETID < 0  (sky / non-science fibers: not unique, no real source, and
+//     often non-finite TARGET_RA/TARGET_DEC that the 2dsphere index would reject)
+//
+// FITS type codes: K=i64  J=i32  I=i16  B=u8  E=f32  D=f64  L=bool  nA=string(n chars)
+// `[KEPT -> field]` marks the 13 columns read into the struct; ZCAT_PRIMARY is read for
+// filtering only. Every other column is currently ignored.
+//
+//   TARGETID      K            [KEPT -> targetid (stored as `_id`)]
+//   SURVEY        7A           [KEPT -> survey (trimmed)]
+//   PROGRAM       6A           [KEPT -> program (trimmed)]
+//   FIRSTNIGHT    J
+//   LASTNIGHT     J
+//   SPGRPVAL      J
+//   Z             D            [KEPT -> z]
+//   ZERR          D            [KEPT -> zerr]
+//   ZWARN         K            [KEPT -> zwarn]
+//   CHI2          D            [KEPT -> chi2]
+//   COEFF         10D
+//   NPIXELS       K
+//   SPECTYPE      6A           [KEPT -> spectype (trimmed)]
+//   SUBTYPE       20A          [KEPT -> subtype (trimmed; empty -> None)]
+//   NCOEFF        K
+//   DELTACHI2     D            [KEPT -> deltachi2]
+//   PETAL_LOC     I
+//   DEVICE_LOC    J
+//   LOCATION      K
+//   FIBER         J
+//   COADD_FIBERSTATUS  J
+//   TARGET_RA     D   deg      [KEPT -> ra (also derives `coordinates.radec_geojson`)]
+//   TARGET_DEC    D   deg      [KEPT -> dec]
+//   PMRA          E   mas/yr
+//   PMDEC         E   mas/yr
+//   REF_EPOCH     E   yr
+//   LAMBDA_REF    E   Angstrom
+//   FA_TARGET     K
+//   FA_TYPE       B
+//   OBJTYPE       3A
+//   FIBERASSIGN_X E   mm
+//   FIBERASSIGN_Y E   mm
+//   PRIORITY      J
+//   SUBPRIORITY   D
+//   OBSCONDITIONS J
+//   RELEASE       I
+//   BRICKNAME     8A
+//   BRICKID       J
+//   BRICK_OBJID   J
+//   MORPHTYPE     4A
+//   EBV           E   mag
+//   FLUX_G/R/Z/W1/W2            E   nanomaggy
+//   FLUX_IVAR_G/R/Z/W1/W2       E   nanomaggy^-2
+//   FIBERFLUX_G/R/Z            E   nanomaggy
+//   FIBERTOTFLUX_G/R/Z        E   nanomaggy
+//   MASKBITS      I
+//   SERSIC        E
+//   SHAPE_R       E   arcsec
+//   SHAPE_E1      E
+//   SHAPE_E2      E
+//   REF_ID        K
+//   REF_CAT       2A
+//   GAIA_PHOT_G/BP/RP_MEAN_MAG  E   mag
+//   PARALLAX      E   mas
+//   PHOTSYS       1A
+//   PRIORITY_INIT K
+//   NUMOBS_INIT   K
+//   CMX_TARGET / DESI_TARGET / BGS_TARGET / MWS_TARGET / SCND_TARGET             K
+//   SV1_/SV2_/SV3_ {DESI,BGS,MWS,SCND}_TARGET                                    K
+//   PLATE_RA      D   deg
+//   PLATE_DEC     D   deg
+//   TILEID        J
+//   COADD_NUMEXP  I
+//   COADD_EXPTIME E   s
+//   COADD_NUMNIGHT I
+//   COADD_NUMTILE I
+//   MEAN_DELTA_X / RMS_DELTA_X / MEAN_DELTA_Y / RMS_DELTA_Y    E   mm
+//   MEAN_PSF_TO_FIBER_SPECFLUX  E
+//   MEAN_FIBER_X / MEAN_FIBER_Y E   mm
+//   MEAN_FIBER_RA  D  deg
+//   STD_FIBER_RA   E  arcsec
+//   MEAN_FIBER_DEC D  deg
+//   STD_FIBER_DEC  E  arcsec
+//   MIN_MJD / MAX_MJD / MEAN_MJD     D
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}_{B,R,Z}   E
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}           E   (camera-summed)
+//   MAIN_NSPEC    I
+//   MAIN_PRIMARY  L
+//   SV_NSPEC      I
+//   SV_PRIMARY    L
+//   ZCAT_NSPEC    I            [KEPT -> zcat_nspec]
+//   ZCAT_PRIMARY  L            (read for the primary filter; not stored)
+//   DESINAME      22A
 #[serde_as]
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
