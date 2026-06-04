@@ -1044,6 +1044,11 @@ impl FitsRowBatch for DesiDr1 {
             if !zcat_primary_col[i] {
                 continue;
             }
+            // Skip sky/non-science fibers: they use negative sentinel TARGETIDs
+            // that are not unique and have no real source or redshift.
+            if targetid_col[i] < 0 {
+                continue;
+            }
             rows.push(DesiDr1 {
                 targetid: targetid_col[i],
                 ra: ra_col[i],
