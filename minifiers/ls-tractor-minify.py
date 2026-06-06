@@ -68,6 +68,15 @@ final_columns = [
 
 def process_tractor_file(args):
 	file_path, output_path = args
+	try:
+		_minify_tractor_file(file_path, output_path)
+		return (file_path, None)
+	except Exception as e:
+		# Skip corrupt/truncated FITS files (e.g. "buffer is too small for requested array")
+		# instead of crashing the whole pool. The caller logs these so they can be re-downloaded.
+		return (file_path, f"{type(e).__name__}: {e}")
+
+def _minify_tractor_file(file_path, output_path):
 	with fits.open(file_path) as F:
 		data = F[1].data
 		small_data = {}
@@ -155,9 +164,24 @@ if __name__ == "__main__":
 
 	# let's parallelize the processing
 	nb_processes = min(args.processes, cpu_count() - 2)
+	failures = []
 	with tqdm(total=len(inputs), desc="Processing tractor files") as pbar:
 		with Pool(processes=nb_processes) as pool:
-			for _ in pool.imap_unordered(process_tractor_file, inputs):
+			for file_path, error in pool.imap_unordered(process_tractor_file, inputs):
+				if error is not None:
+					failures.append((file_path, error))
+					pbar.write(f"SKIPPED {file_path}: {error}")
 				pbar.update()
+
+	# Report and persist the list of files that failed (e.g. corrupt/truncated downloads)
+	# so they can be re-downloaded and re-run, rather than silently lost.
+	print(f"\nDone: {len(inputs) - len(failures)}/{len(inputs)} files minified, {len(failures)} failed.")
+	if failures:
+		fail_log = os.path.join(output_dir, "failed_files.txt")
+		os.makedirs(output_dir, exist_ok=True)
+		with open(fail_log, "w") as f:
+			for file_path, error in failures:
+				f.write(f"{file_path}\t{error}\n")
+		print(f"Failed files written to {fail_log}")
 
 
