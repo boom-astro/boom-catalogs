@@ -138,6 +138,64 @@ impl HasCoordinates for GaiaPS1Xmatch {
     }
 }
 
+// Combined Legacy Survey DR10 catalog: minified tractor astrometry joined to the LS DR10
+// photo-z on `lsid` (see minifiers/combine-minify.py). Parquet schema:
+//   lsid (u64), ra (f64), dec (f64), ra_err (f32), dec_err (f32),
+//   z_phot (f32, nullable), z_phot_err (f32, nullable), photo_z_type (str, nullable)
+// `ra_deg` is a hive partition directory, not a file column, so it is not read here.
+// lsid/ra/dec/ra_err/dec_err always exist (tractor side of the LEFT join); only the photo-z
+// fields are nullable (not every source has a photo-z).
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LsDr10photoz {
+    #[serde(rename(serialize = "_id"))]
+    pub lsid: i64, // LS unique id = objid + (brickid<<N) + (release<<40); fits in i64
+    pub ra: f64,
+    pub dec: f64,
+    pub ra_err: f32,
+    pub dec_err: f32,
+    pub z_phot: Option<f32>,
+    pub z_phot_err: Option<f32>,
+    pub photo_z_type: Option<String>,
+}
+
+impl ParquetRowBatch for LsDr10photoz {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LsDr10photoz>> {
+        let lsid_series = df.column("lsid")?.u64()?;
+        let ra_series = df.column("ra")?.f64()?;
+        let dec_series = df.column("dec")?.f64()?;
+        let ra_err_series = df.column("ra_err")?.f32()?;
+        let dec_err_series = df.column("dec_err")?.f32()?;
+        let z_phot_series = df.column("z_phot")?.f32()?;
+        let z_phot_err_series = df.column("z_phot_err")?.f32()?;
+        let photo_z_type_series = df.column("photo_z_type")?.str()?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            // These columns are guaranteed non-null (tractor side of the LEFT join).
+            results.push(LsDr10photoz {
+                lsid: lsid_series.get(i).unwrap() as i64,
+                ra: ra_series.get(i).unwrap(),
+                dec: dec_series.get(i).unwrap(),
+                ra_err: ra_err_series.get(i).unwrap(),
+                dec_err: dec_err_series.get(i).unwrap(),
+                // photo-z fields may be null (source had no photo-z match).
+                z_phot: z_phot_series.get(i),
+                z_phot_err: z_phot_err_series.get(i),
+                photo_z_type: photo_z_type_series.get(i).map(|s| s.to_string()),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for LsDr10photoz {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Gaia {
     // use the serde rename attribute so that when converted to a bson document
@@ -1193,6 +1251,7 @@ pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
     AllWISE,
+    LsDr10photoz,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
