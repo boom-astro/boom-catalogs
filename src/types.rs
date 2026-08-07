@@ -244,8 +244,10 @@ impl HasCoordinates for Gaia {
     }
 }
 
+// Deliberately not #[skip_serializing_none]: that drops None fields from the document
+// entirely, and consumers cross-matching NED then error on the missing key. Every field
+// is always present, with absent quantities stored as an explicit null.
 #[serde_as]
-#[skip_serializing_none]
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Ned {
     #[serde(rename(serialize = "_id"))]
