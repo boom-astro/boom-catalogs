@@ -258,6 +258,16 @@ pub struct Ned {
     z_tech: String,
     z_qual: bool,
     z_refcode: String,
+    // angular diameter ellipse, added to NED-LVS in the 2026-04-24 release
+    diam: Option<f64>,
+    diam_ra: Option<f64>,
+    diam_dec: Option<f64>,
+    diam_ba: Option<f64>,
+    diam_pa: Option<f64>,
+    diam_survey: String,
+    diam_filt: String,
+    diam_refcode: String,
+    diam_qual: bool,
     ebv: Option<f64>,
     m_star: Option<f64>,
     m_star_unc: Option<f64>,
@@ -288,6 +298,15 @@ impl FitsRowBatch for Ned {
         let z_tech_col: Vec<String> = hdu.read_col_range(fptr, "z_tech", &range)?;
         let z_qual_col: Vec<bool> = hdu.read_col_range(fptr, "z_qual", &range)?;
         let z_refcode_col: Vec<String> = hdu.read_col_range(fptr, "z_refcode", &range)?;
+        let diam_col: Vec<f64> = hdu.read_col_range(fptr, "Diam", &range)?;
+        let diam_ra_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_ra", &range)?;
+        let diam_dec_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_dec", &range)?;
+        let diam_ba_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_ba", &range)?;
+        let diam_pa_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_pa", &range)?;
+        let diam_survey_col: Vec<String> = hdu.read_col_range(fptr, "Diam_survey", &range)?;
+        let diam_filt_col: Vec<String> = hdu.read_col_range(fptr, "Diam_filt", &range)?;
+        let diam_refcode_col: Vec<String> = hdu.read_col_range(fptr, "Diam_refcode", &range)?;
+        let diam_qual_col: Vec<bool> = hdu.read_col_range(fptr, "Diam_qual", &range)?;
         let ebv_col: Vec<f64> = hdu.read_col_range(fptr, "ebv", &range)?;
         let m_star_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar", &range)?;
         let m_star_unc_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar_unc", &range)?;
@@ -306,6 +325,15 @@ impl FitsRowBatch for Ned {
                 z_tech: z_tech_col[i].clone(),
                 z_qual: z_qual_col[i],
                 z_refcode: z_refcode_col[i].clone(),
+                diam: float_nullable(diam_col[i]),
+                diam_ra: float_nullable(diam_ra_col[i]),
+                diam_dec: float_nullable(diam_dec_col[i]),
+                diam_ba: float_nullable(diam_ba_col[i]),
+                diam_pa: float_nullable(diam_pa_col[i]),
+                diam_survey: diam_survey_col[i].clone(),
+                diam_filt: diam_filt_col[i].clone(),
+                diam_refcode: diam_refcode_col[i].clone(),
+                diam_qual: diam_qual_col[i],
                 ebv: float_nullable(ebv_col[i]),
                 m_star: float_nullable(m_star_col[i]),
                 m_star_unc: float_nullable(m_star_unc_col[i]),
