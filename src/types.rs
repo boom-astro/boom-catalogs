@@ -260,6 +260,9 @@ pub struct Ned {
     z_tech: String,
     z_qual: bool,
     z_refcode: String,
+    dist_mpc: Option<f64>,
+    dist_mpc_unc: Option<f64>,
+    dist_mpc_method: String,
     // angular diameter ellipse, added to NED-LVS in the 2026-04-24 release
     diam: Option<f64>,
     diam_ra: Option<f64>,
@@ -300,6 +303,10 @@ impl FitsRowBatch for Ned {
         let z_tech_col: Vec<String> = hdu.read_col_range(fptr, "z_tech", &range)?;
         let z_qual_col: Vec<bool> = hdu.read_col_range(fptr, "z_qual", &range)?;
         let z_refcode_col: Vec<String> = hdu.read_col_range(fptr, "z_refcode", &range)?;
+        let dist_mpc_col: Vec<f64> = hdu.read_col_range(fptr, "DistMpc", &range)?;
+        let dist_mpc_unc_col: Vec<f64> = hdu.read_col_range(fptr, "DistMpc_unc", &range)?;
+        let dist_mpc_method_col: Vec<String> =
+            hdu.read_col_range(fptr, "DistMpc_method", &range)?;
         let diam_col: Vec<f64> = hdu.read_col_range(fptr, "Diam", &range)?;
         let diam_ra_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_ra", &range)?;
         let diam_dec_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_dec", &range)?;
@@ -327,6 +334,9 @@ impl FitsRowBatch for Ned {
                 z_tech: z_tech_col[i].clone(),
                 z_qual: z_qual_col[i],
                 z_refcode: z_refcode_col[i].clone(),
+                dist_mpc: float_nullable(dist_mpc_col[i]),
+                dist_mpc_unc: float_nullable(dist_mpc_unc_col[i]),
+                dist_mpc_method: dist_mpc_method_col[i].clone(),
                 diam: float_nullable(diam_col[i]),
                 diam_ra: float_nullable(diam_ra_col[i]),
                 diam_dec: float_nullable(diam_dec_col[i]),
