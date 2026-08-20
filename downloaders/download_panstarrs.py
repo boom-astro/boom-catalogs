@@ -1,4 +1,4 @@
-"""Script to download PanSTARRS DR2 stack_object parquet files in parallel."""
+"""Script to download PanSTARRS DR2 otmo parquet files in parallel."""
 import os
 import time
 import argparse
@@ -29,9 +29,9 @@ PANSTARRS_COLUMNS = [
     "yMeanPSFMagErr",
 ]
 
-PANSTARRS_S3_URL = "s3://stpubdata/panstarrs/ps1/public/hats/stack_object"
+PANSTARRS_S3_URL = "s3://stpubdata/panstarrs/ps1/public/hats/otmo"
 
-parser = argparse.ArgumentParser(description="Download PanSTARRS DR2 stack_object parquet files in parallel.")
+parser = argparse.ArgumentParser(description="Download PanSTARRS DR2 otmo parquet files in parallel.")
 parser.add_argument("--output-dir", type=str, default=PANSTARRS_OUTPUT_DIR, help="Directory to save downloaded files")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel download processes")
 
