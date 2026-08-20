@@ -54,7 +54,9 @@ where
                 Ok(_) => {
                     total_processed += docs.len();
                 }
-                Err(_e) => {}
+                Err(e) => {
+                    eprintln!("Worker {}: error in batch insert: {}", worker_id, e);
+                }
             }
             docs.clear();
         }
@@ -68,8 +70,8 @@ where
             Ok(_) => {
                 total_processed += docs.len();
             }
-            Err(_e) => {
-                eprintln!("Worker {}: Error in final insert", worker_id);
+            Err(e) => {
+                eprintln!("Worker {}: error in final insert: {}", worker_id, e);
             }
         }
     }

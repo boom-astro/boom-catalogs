@@ -1,7 +1,9 @@
 use anyhow::Result;
+use boom_catalogs::db::from_uri;
 use boom_catalogs::parquet::process_parquet;
 use boom_catalogs::types::{AllWISE, CatWISE2020, GaiaPS1Xmatch, LsDr10photoz, ParquetCatalogs};
 use clap::Parser;
+use mongodb::bson::Document;
 
 #[derive(Parser)]
 struct Cli {
@@ -53,6 +55,16 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
+    // Drop the collection once up front, not per file: with a directory of
+    // inputs, dropping inside the loop wipes every file ingested before the
+    // last one.
+    if args.drop_existing_collection {
+        let db = from_uri(&args.uri, &args.db).await?;
+        let collection = db.collection::<Document>(&args.collection);
+        collection.drop().await?;
+        println!("Dropped existing collection: {}", args.collection);
+    }
+
     // path could be a dir or a file
     let paths = if std::fs::metadata(&args.path)?.is_dir() {
         // we need to look recusively for files, as the parquet files could be in subdirs
@@ -90,7 +102,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
+                    false, // dropped once above
                     args.init_indexes,
                 )
                 .await
@@ -104,7 +116,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
+                    false, // dropped once above
                     args.init_indexes,
                 )
                 .await
@@ -118,7 +130,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
+                    false, // dropped once above
                     args.init_indexes,
                 )
                 .await
@@ -132,7 +144,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
+                    false, // dropped once above
                     args.init_indexes,
                 )
                 .await
