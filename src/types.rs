@@ -138,6 +138,64 @@ impl HasCoordinates for GaiaPS1Xmatch {
     }
 }
 
+// Combined Legacy Survey DR10 catalog: minified tractor astrometry joined to the LS DR10
+// photo-z on `lsid` (see minifiers/combine-minify.py). Parquet schema:
+//   lsid (u64), ra (f64), dec (f64), ra_err (f32), dec_err (f32),
+//   z_phot (f32, nullable), z_phot_err (f32, nullable), photo_z_type (str, nullable)
+// `ra_deg` is a hive partition directory, not a file column, so it is not read here.
+// lsid/ra/dec/ra_err/dec_err always exist (tractor side of the LEFT join); only the photo-z
+// fields are nullable (not every source has a photo-z).
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LsDr10photoz {
+    #[serde(rename(serialize = "_id"))]
+    pub lsid: i64, // LS unique id = objid + (brickid<<N) + (release<<40); fits in i64
+    pub ra: f64,
+    pub dec: f64,
+    pub ra_err: f32,
+    pub dec_err: f32,
+    pub z_phot: Option<f32>,
+    pub z_phot_err: Option<f32>,
+    pub photo_z_type: Option<String>,
+}
+
+impl ParquetRowBatch for LsDr10photoz {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LsDr10photoz>> {
+        let lsid_series = df.column("lsid")?.u64()?;
+        let ra_series = df.column("ra")?.f64()?;
+        let dec_series = df.column("dec")?.f64()?;
+        let ra_err_series = df.column("ra_err")?.f32()?;
+        let dec_err_series = df.column("dec_err")?.f32()?;
+        let z_phot_series = df.column("z_phot")?.f32()?;
+        let z_phot_err_series = df.column("z_phot_err")?.f32()?;
+        let photo_z_type_series = df.column("photo_z_type")?.str()?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            // These columns are guaranteed non-null (tractor side of the LEFT join).
+            results.push(LsDr10photoz {
+                lsid: lsid_series.get(i).unwrap() as i64,
+                ra: ra_series.get(i).unwrap(),
+                dec: dec_series.get(i).unwrap(),
+                ra_err: ra_err_series.get(i).unwrap(),
+                dec_err: dec_err_series.get(i).unwrap(),
+                // photo-z fields may be null (source had no photo-z match).
+                z_phot: z_phot_series.get(i),
+                z_phot_err: z_phot_err_series.get(i),
+                photo_z_type: photo_z_type_series.get(i).map(|s| s.to_string()),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for LsDr10photoz {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Gaia {
     // use the serde rename attribute so that when converted to a bson document
@@ -186,8 +244,10 @@ impl HasCoordinates for Gaia {
     }
 }
 
+// Deliberately not #[skip_serializing_none]: that drops None fields from the document
+// entirely, and consumers cross-matching NED then error on the missing key. Every field
+// is always present, with absent quantities stored as an explicit null.
 #[serde_as]
-#[skip_serializing_none]
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Ned {
     #[serde(rename(serialize = "_id"))]
@@ -200,6 +260,19 @@ pub struct Ned {
     z_tech: String,
     z_qual: bool,
     z_refcode: String,
+    dist_mpc: Option<f64>,
+    dist_mpc_unc: Option<f64>,
+    dist_mpc_method: String,
+    // angular diameter ellipse, added to NED-LVS in the 2026-04-24 release
+    diam: Option<f64>,
+    diam_ra: Option<f64>,
+    diam_dec: Option<f64>,
+    diam_ba: Option<f64>,
+    diam_pa: Option<f64>,
+    diam_survey: String,
+    diam_filt: String,
+    diam_refcode: String,
+    diam_qual: bool,
     ebv: Option<f64>,
     m_star: Option<f64>,
     m_star_unc: Option<f64>,
@@ -230,6 +303,19 @@ impl FitsRowBatch for Ned {
         let z_tech_col: Vec<String> = hdu.read_col_range(fptr, "z_tech", &range)?;
         let z_qual_col: Vec<bool> = hdu.read_col_range(fptr, "z_qual", &range)?;
         let z_refcode_col: Vec<String> = hdu.read_col_range(fptr, "z_refcode", &range)?;
+        let dist_mpc_col: Vec<f64> = hdu.read_col_range(fptr, "DistMpc", &range)?;
+        let dist_mpc_unc_col: Vec<f64> = hdu.read_col_range(fptr, "DistMpc_unc", &range)?;
+        let dist_mpc_method_col: Vec<String> =
+            hdu.read_col_range(fptr, "DistMpc_method", &range)?;
+        let diam_col: Vec<f64> = hdu.read_col_range(fptr, "Diam", &range)?;
+        let diam_ra_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_ra", &range)?;
+        let diam_dec_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_dec", &range)?;
+        let diam_ba_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_ba", &range)?;
+        let diam_pa_col: Vec<f64> = hdu.read_col_range(fptr, "Diam_pa", &range)?;
+        let diam_survey_col: Vec<String> = hdu.read_col_range(fptr, "Diam_survey", &range)?;
+        let diam_filt_col: Vec<String> = hdu.read_col_range(fptr, "Diam_filt", &range)?;
+        let diam_refcode_col: Vec<String> = hdu.read_col_range(fptr, "Diam_refcode", &range)?;
+        let diam_qual_col: Vec<bool> = hdu.read_col_range(fptr, "Diam_qual", &range)?;
         let ebv_col: Vec<f64> = hdu.read_col_range(fptr, "ebv", &range)?;
         let m_star_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar", &range)?;
         let m_star_unc_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar_unc", &range)?;
@@ -248,6 +334,18 @@ impl FitsRowBatch for Ned {
                 z_tech: z_tech_col[i].clone(),
                 z_qual: z_qual_col[i],
                 z_refcode: z_refcode_col[i].clone(),
+                dist_mpc: float_nullable(dist_mpc_col[i]),
+                dist_mpc_unc: float_nullable(dist_mpc_unc_col[i]),
+                dist_mpc_method: dist_mpc_method_col[i].clone(),
+                diam: float_nullable(diam_col[i]),
+                diam_ra: float_nullable(diam_ra_col[i]),
+                diam_dec: float_nullable(diam_dec_col[i]),
+                diam_ba: float_nullable(diam_ba_col[i]),
+                diam_pa: float_nullable(diam_pa_col[i]),
+                diam_survey: diam_survey_col[i].clone(),
+                diam_filt: diam_filt_col[i].clone(),
+                diam_refcode: diam_refcode_col[i].clone(),
+                diam_qual: diam_qual_col[i],
                 ebv: float_nullable(ebv_col[i]),
                 m_star: float_nullable(m_star_col[i]),
                 m_star_unc: float_nullable(m_star_unc_col[i]),
@@ -259,6 +357,51 @@ impl FitsRowBatch for Ned {
 }
 
 impl HasCoordinates for Ned {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Default, Serialize, Deserialize, Debug)]
+pub struct ERosita {
+    #[serde(rename(serialize = "_id"))]
+    iauname: String,
+    ra: f64,
+    dec: f64,
+    ml_flux_1: f32,
+    ml_flux_err_1: f32,
+}
+
+impl FitsRowBatch for ERosita {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<ERosita>> {
+        let iauname_col: Vec<String> = hdu.read_col_range(fptr, "IAUNAME", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "DEC", &range)?;
+        let ml_flux_1_col: Vec<f32> = hdu.read_col_range(fptr, "ML_FLUX_1", &range)?;
+        let ml_flux_err_1_col: Vec<f32> = hdu.read_col_range(fptr, "ML_FLUX_ERR_1", &range)?;
+
+        // Combine the columns into a Vec<Row>
+        let mut rows = Vec::with_capacity(iauname_col.len());
+        for i in 0..iauname_col.len() {
+            rows.push(ERosita {
+                iauname: iauname_col[i].trim_matches('\0').trim().to_string(),
+                ra: ra_col[i],
+                dec: dec_col[i],
+                ml_flux_1: ml_flux_1_col[i],
+                ml_flux_err_1: ml_flux_err_1_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for ERosita {
     fn has_coordinates() -> bool {
         true
     }
@@ -904,11 +1047,233 @@ impl HasCoordinates for TwoMass {
     }
 }
 
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UVGapsXGaia {
+    #[serde(rename(serialize = "_id"))]
+    pub source_id: i64,
+    #[serde(rename(serialize = "ra"))]
+    pub ra_gaia: f64,
+    #[serde(rename(serialize = "dec"))]
+    pub dec_gaia: f64,
+    pub nuv: f64,
+}
+
+impl FitsRowBatch for UVGapsXGaia {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<UVGapsXGaia>> {
+        let source_id_col: Vec<i64> = hdu.read_col_range(fptr, "source_id", &range)?;
+        let ra_gaia_col: Vec<f64> = hdu.read_col_range(fptr, "ra_gaia", &range)?;
+        let dec_gaia_col: Vec<f64> = hdu.read_col_range(fptr, "dec_gaia", &range)?;
+        let nuv_col: Vec<f64> = hdu.read_col_range(fptr, "nuv", &range)?;
+
+        let mut rows = Vec::with_capacity(source_id_col.len());
+        for i in 0..source_id_col.len() {
+            rows.push(UVGapsXGaia {
+                source_id: source_id_col[i],
+                ra_gaia: ra_gaia_col[i],
+                dec_gaia: dec_gaia_col[i],
+                nuv: nuv_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for UVGapsXGaia {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+// DESI DR1 spec-z, from the iron `zall-tilecumulative-iron.fits` zcatalog.
+// HDU 1 (ZCATALOG): 30,304,000 rows x 148 columns. Full schema in the DESI datamodel:
+//   https://desidatamodel.readthedocs.io/en/latest/DESI_SPECTRO_REDUX/SPECPROD/zcatalog/VERSION/zall-tilecumulative-SPECPROD.html
+//
+// Row FILTERS applied in `read_batch`:
+//   - keep only ZCAT_PRIMARY == true  (one best spectrum per target)
+//   - drop TARGETID < 0  (sky / non-science fibers: not unique, no real source, and
+//     often non-finite TARGET_RA/TARGET_DEC that the 2dsphere index would reject)
+//
+// FITS type codes: K=i64  J=i32  I=i16  B=u8  E=f32  D=f64  L=bool  nA=string(n chars)
+// `[KEPT -> field]` marks the 13 columns read into the struct; ZCAT_PRIMARY is read for
+// filtering only. Every other column is currently ignored.
+//
+//   TARGETID      K            [KEPT -> targetid (stored as `_id`)]
+//   SURVEY        7A           [KEPT -> survey (trimmed)]
+//   PROGRAM       6A           [KEPT -> program (trimmed)]
+//   FIRSTNIGHT    J
+//   LASTNIGHT     J
+//   SPGRPVAL      J
+//   Z             D            [KEPT -> z]
+//   ZERR          D            [KEPT -> zerr]
+//   ZWARN         K            [KEPT -> zwarn]
+//   CHI2          D            [KEPT -> chi2]
+//   COEFF         10D
+//   NPIXELS       K
+//   SPECTYPE      6A           [KEPT -> spectype (trimmed)]
+//   SUBTYPE       20A          [KEPT -> subtype (trimmed; empty -> None)]
+//   NCOEFF        K
+//   DELTACHI2     D            [KEPT -> deltachi2]
+//   PETAL_LOC     I
+//   DEVICE_LOC    J
+//   LOCATION      K
+//   FIBER         J
+//   COADD_FIBERSTATUS  J
+//   TARGET_RA     D   deg      [KEPT -> ra (also derives `coordinates.radec_geojson`)]
+//   TARGET_DEC    D   deg      [KEPT -> dec]
+//   PMRA          E   mas/yr
+//   PMDEC         E   mas/yr
+//   REF_EPOCH     E   yr
+//   LAMBDA_REF    E   Angstrom
+//   FA_TARGET     K
+//   FA_TYPE       B
+//   OBJTYPE       3A
+//   FIBERASSIGN_X E   mm
+//   FIBERASSIGN_Y E   mm
+//   PRIORITY      J
+//   SUBPRIORITY   D
+//   OBSCONDITIONS J
+//   RELEASE       I
+//   BRICKNAME     8A
+//   BRICKID       J
+//   BRICK_OBJID   J
+//   MORPHTYPE     4A
+//   EBV           E   mag
+//   FLUX_G/R/Z/W1/W2            E   nanomaggy
+//   FLUX_IVAR_G/R/Z/W1/W2       E   nanomaggy^-2
+//   FIBERFLUX_G/R/Z            E   nanomaggy
+//   FIBERTOTFLUX_G/R/Z        E   nanomaggy
+//   MASKBITS      I
+//   SERSIC        E
+//   SHAPE_R       E   arcsec
+//   SHAPE_E1      E
+//   SHAPE_E2      E
+//   REF_ID        K
+//   REF_CAT       2A
+//   GAIA_PHOT_G/BP/RP_MEAN_MAG  E   mag
+//   PARALLAX      E   mas
+//   PHOTSYS       1A
+//   PRIORITY_INIT K
+//   NUMOBS_INIT   K
+//   CMX_TARGET / DESI_TARGET / BGS_TARGET / MWS_TARGET / SCND_TARGET             K
+//   SV1_/SV2_/SV3_ {DESI,BGS,MWS,SCND}_TARGET                                    K
+//   PLATE_RA      D   deg
+//   PLATE_DEC     D   deg
+//   TILEID        J
+//   COADD_NUMEXP  I
+//   COADD_EXPTIME E   s
+//   COADD_NUMNIGHT I
+//   COADD_NUMTILE I
+//   MEAN_DELTA_X / RMS_DELTA_X / MEAN_DELTA_Y / RMS_DELTA_Y    E   mm
+//   MEAN_PSF_TO_FIBER_SPECFLUX  E
+//   MEAN_FIBER_X / MEAN_FIBER_Y E   mm
+//   MEAN_FIBER_RA  D  deg
+//   STD_FIBER_RA   E  arcsec
+//   MEAN_FIBER_DEC D  deg
+//   STD_FIBER_DEC  E  arcsec
+//   MIN_MJD / MAX_MJD / MEAN_MJD     D
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}_{B,R,Z}   E
+//   TSNR2_{GPBDARK,ELG,GPBBRIGHT,LYA,BGS,GPBBACKUP,QSO,LRG}           E   (camera-summed)
+//   MAIN_NSPEC    I
+//   MAIN_PRIMARY  L
+//   SV_NSPEC      I
+//   SV_PRIMARY    L
+//   ZCAT_NSPEC    I            [KEPT -> zcat_nspec]
+//   ZCAT_PRIMARY  L            (read for the primary filter; not stored)
+//   DESINAME      22A
+#[serde_as]
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DesiDr1 {
+    #[serde(rename(serialize = "_id"))]
+    pub targetid: i64,
+    pub ra: f64,
+    pub dec: f64,
+    pub survey: String,
+    pub program: String,
+    pub z: f64,
+    pub zerr: f64,
+    pub zwarn: i64,
+    pub chi2: f64,
+    pub deltachi2: f64,
+    pub spectype: String,
+    pub subtype: Option<String>,
+    pub zcat_nspec: i32,
+}
+
+impl HasCoordinates for DesiDr1 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+impl FitsRowBatch for DesiDr1 {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<DesiDr1>> {
+        let targetid_col: Vec<i64> = hdu.read_col_range(fptr, "TARGETID", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_RA", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "TARGET_DEC", &range)?;
+        let survey_col: Vec<String> = hdu.read_col_range(fptr, "SURVEY", &range)?;
+        let program_col: Vec<String> = hdu.read_col_range(fptr, "PROGRAM", &range)?;
+        let z_col: Vec<f64> = hdu.read_col_range(fptr, "Z", &range)?;
+        let zerr_col: Vec<f64> = hdu.read_col_range(fptr, "ZERR", &range)?;
+        let zwarn_col: Vec<i64> = hdu.read_col_range(fptr, "ZWARN", &range)?;
+        let chi2_col: Vec<f64> = hdu.read_col_range(fptr, "CHI2", &range)?;
+        let deltachi2_col: Vec<f64> = hdu.read_col_range(fptr, "DELTACHI2", &range)?;
+        let spectype_col: Vec<String> = hdu.read_col_range(fptr, "SPECTYPE", &range)?;
+        let subtype_col: Vec<String> = hdu.read_col_range(fptr, "SUBTYPE", &range)?;
+        let zcat_primary_col: Vec<bool> = hdu.read_col_range(fptr, "ZCAT_PRIMARY", &range)?;
+        let zcat_nspec_col: Vec<i32> = hdu.read_col_range(fptr, "ZCAT_NSPEC", &range)?;
+
+        let mut rows = Vec::with_capacity(targetid_col.len());
+        for i in 0..targetid_col.len() {
+            if !zcat_primary_col[i] {
+                continue;
+            }
+            // Skip sky/non-science fibers: they use negative sentinel TARGETIDs
+            // that are not unique and have no real source or redshift.
+            if targetid_col[i] < 0 {
+                continue;
+            }
+            rows.push(DesiDr1 {
+                targetid: targetid_col[i],
+                ra: ra_col[i],
+                dec: dec_col[i],
+                survey: survey_col[i].trim().to_string(),
+                program: program_col[i].trim().to_string(),
+                z: z_col[i],
+                zerr: zerr_col[i],
+                zwarn: zwarn_col[i],
+                chi2: chi2_col[i],
+                deltachi2: deltachi2_col[i],
+                spectype: spectype_col[i].trim().to_string(),
+                subtype: {
+                    let s = subtype_col[i].trim().to_string();
+                    if s.is_empty() { None } else { Some(s) }
+                },
+                zcat_nspec: zcat_nspec_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum FitsCatalogs {
     Ned,
     Milliquas,
+    ERosita,
+    UVGapsXGaia,
+    DesiDr1,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
@@ -996,6 +1361,7 @@ pub enum ParquetCatalogs {
     CatWISE2020,
     AllWISE,
     PanSTARRS,
+    LsDr10photoz,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
