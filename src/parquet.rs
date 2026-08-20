@@ -35,7 +35,6 @@ pub async fn process_parquet<T>(
     num_workers: usize,
     batch_size: usize,
     channel_capacity: usize,
-    drop_existing_collection: bool,
     init_indexes: bool,
 ) -> Result<(), anyhow::Error>
 where
@@ -63,15 +62,13 @@ where
     let num_rows = estimate_rows_in_parquet(&parquet_path)?;
     println!("Estimated number of rows: {}", num_rows);
 
-    let processor = Processor::new::<T>(
+    let processor = Processor::new(
         mongodb_uri,
         db_name,
         collection_name,
         num_workers,
         batch_size,
         channel_capacity,
-        drop_existing_collection,
-        init_indexes,
     )
     .await?;
     let (s, workers) = processor.init_workers();
@@ -119,6 +116,10 @@ where
     drop(s);
     // Wait for all workers to complete
     let _ = processor.close_workers(workers).await;
+
+    if init_indexes {
+        processor.init_indexes::<T>().await?;
+    }
 
     progress_bar.finish_with_message("Parquet processing complete");
 

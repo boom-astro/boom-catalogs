@@ -1,7 +1,9 @@
 use anyhow::Result;
 use boom_catalogs::ascii::process_ascii;
+use boom_catalogs::db::from_uri;
 use boom_catalogs::types::{AsciiCatalogs, TwoMass, VSX};
 use clap::Parser;
+use mongodb::bson::Document;
 
 #[derive(Parser)]
 struct Cli {
@@ -53,31 +55,37 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
+    // Drop the collection once up front, before any file is processed.
+    if args.drop_existing_collection {
+        let db = from_uri(&args.uri, &args.db).await?;
+        let collection = db.collection::<Document>(&args.collection);
+        collection.drop().await?;
+        println!("Dropped existing collection: {}", args.collection);
+    }
+
     match args.type_name {
         AsciiCatalogs::VSX => {
             process_ascii::<VSX>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;
         }
         AsciiCatalogs::TwoMass => {
             process_ascii::<TwoMass>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;

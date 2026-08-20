@@ -88,6 +88,8 @@ async fn main() -> Result<()> {
     println!("Found {} files to process.", paths.len());
     for (i, path) in paths.iter().enumerate() {
         println!("Processing file: {} ({} of {})", path, i + 1, paths.len());
+        // index once the whole directory is in, not per file
+        let is_last = i + 1 == paths.len();
         let uri = args.uri.clone();
         let db = args.db.clone();
         let collection = args.collection.clone();
@@ -102,8 +104,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false, // dropped once above
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -116,8 +117,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false, // dropped once above
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -130,8 +130,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false, // dropped once above
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -144,8 +143,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false, // dropped once above
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
