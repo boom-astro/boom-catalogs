@@ -17,42 +17,16 @@ PANSTARRS_COLUMNS = [
     "objID",
     "raMean",
     "decMean",
-    "iPSFMag",
-    "gmomentXX",
-    "rmomentXX",
-    "imomentXX",
-    "zmomentXX",
-    "ymomentXX",
-    "gmomentYY",
-    "rmomentYY",
-    "imomentYY",
-    "zmomentYY",
-    "ymomentYY",
-    "gmomentXY",
-    "rmomentXY",
-    "imomentXY",
-    "zmomentXY",
-    "ymomentXY",
-    "nDetections",
-    "primaryDetection",
-    "gKronRad",
-    "rKronRad",
-    "iKronRad",
-    "zKronRad",
-    "yKronRad",
-    "gKronMag",
-    "rKronMag",
-    "iKronMag",
-    "zKronMag",
-    "yKronMag",
-    "gKronMagErr",
-    "rKronMagErr",
-    "iKronMagErr",
-    "zKronMagErr",
-    "yKronMagErr",
-    "rExtNSigma",
-    "iExtNSigma",
-    "zExtNSigma",
+    "gMeanPSFMag",
+    "rMeanPSFMag",
+    "iMeanPSFMag",
+    "zMeanPSFMag",
+    "yMeanPSFMag",
+    "gMeanPSFMagErr",
+    "rMeanPSFMagErr",
+    "iMeanPSFMagErr",
+    "zMeanPSFMagErr",
+    "yMeanPSFMagErr",
 ]
 
 PANSTARRS_S3_URL = "s3://stpubdata/panstarrs/ps1/public/hats/stack_object"
@@ -74,11 +48,7 @@ def download_partition(arguments):
                 columns=PANSTARRS_COLUMNS,
             )
             partition_df = catalog.get_partition(pixel_order, pixel_pixel).compute()
-            partition_df = (
-                partition_df
-                .sort_values("primaryDetection", ascending=False)
-                .drop_duplicates("objID", keep="first")
-            )
+            partition_df = partition_df.drop_duplicates("objID", keep="first")
             partition_df.to_parquet(out_path)
             del partition_df
             return
