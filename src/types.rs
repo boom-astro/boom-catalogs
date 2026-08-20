@@ -1294,15 +1294,25 @@ pub struct PanSTARRS {
     pub ra_mean: f64,
     #[serde(rename(serialize = "dec"))]
     pub dec_mean: f64,
+    #[serde(rename(serialize = "gMeanPSFMag"))]
     pub g_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "gMeanPSFMagErr"))]
     pub g_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "rMeanPSFMag"))]
     pub r_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "rMeanPSFMagErr"))]
     pub r_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "iMeanPSFMag"))]
     pub i_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "iMeanPSFMagErr"))]
     pub i_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "zMeanPSFMag"))]
     pub z_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "zMeanPSFMagErr"))]
     pub z_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "yMeanPSFMag"))]
     pub y_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "yMeanPSFMagErr"))]
     pub y_mean_psf_mag_err  : Option<f64>,
 }
 
