@@ -1,6 +1,8 @@
 use anyhow::Result;
 use boom_catalogs::parquet::process_parquet;
-use boom_catalogs::types::{AllWISE, CatWISE2020, GaiaPS1Xmatch, LSDR10, ParquetCatalogs};
+use boom_catalogs::types::{
+    AllWISE, CatWISE2020, GaiaPS1Xmatch, LSDR10, LsDr10photoz, ParquetCatalogs,
+};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -125,6 +127,20 @@ async fn main() -> Result<()> {
             }
             ParquetCatalogs::LSDR10 => {
                 process_parquet::<LSDR10>(
+                    uri,
+                    db,
+                    collection,
+                    path.clone(),
+                    args.num_workers,
+                    args.batch_size,
+                    args.channel_capacity,
+                    args.drop_existing_collection,
+                    args.init_indexes,
+                )
+                .await
+            }
+            ParquetCatalogs::LsDr10photoz => {
+                process_parquet::<LsDr10photoz>(
                     uri,
                     db,
                     collection,
