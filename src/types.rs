@@ -776,56 +776,57 @@ impl HasCoordinates for AllWISE {
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LSDR10 {
+    /// Legacy Survey unique id: objid + (brickid << N) + (release << 40),
+    /// N = 20 for DR10+ (release >= 10000), else 16. Matches `LsDr10photoz::lsid`.
     #[serde(rename(serialize = "_id"))]
-    pub id: String,
+    pub id: i64,
     pub ra: f64,
     pub dec: f64,
-    pub ra_ivar: Option<f32>,
-    pub dec_ivar: Option<f32>,
     #[serde(rename(deserialize = "type"))]
     pub objtype: String,
-    pub flux_r: Option<f32>,
-    pub nobs_g: Option<i32>,
-    pub nobs_r: Option<i32>,
-    pub nobs_z: Option<i32>,
-    pub fitbits: Option<i32>,
-    pub shape_r: Option<f32>,
-    pub shape_r_ivar: Option<f32>,
-    pub shape_e1: Option<f32>,
-    pub shape_e1_ivar: Option<f32>,
-    pub shape_e2: Option<f32>,
-    pub shape_e2_ivar: Option<f32>,
-    pub mw_transmission_r: Option<f32>,
-    pub z_phot_mean: Option<f32>,
-    pub z_phot_std: Option<f32>,
+    pub ebv: Option<f32>,
     pub z_spec: Option<f32>,
+    pub survey: Option<String>,
+    pub z_phot_mean: Option<f32>,
+    pub z_phot_median: Option<f32>,
+    pub z_phot_std: Option<f32>,
+    pub z_phot_l95: Option<f32>,
+    pub z_phot_u95: Option<f32>,
+    pub flux_g: Option<f32>,
+    pub flux_r: Option<f32>,
+    pub flux_i: Option<f32>,
+    pub flux_z: Option<f32>,
+    pub flux_w1: Option<f32>,
+    pub flux_w2: Option<f32>,
+    pub flux_w3: Option<f32>,
+    pub flux_w4: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
     fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
+        // RELEASE + BRICKID + OBJID form the unique key; OBJID alone repeats across bricks.
         let release_series = df.column("release")?;
         let brickid_series = df.column("brickid")?;
         let objid_series = df.column("objid")?;
         let ra_series = df.column("ra")?;
         let dec_series = df.column("dec")?;
-        let ra_ivar_series = df.column("ra_ivar")?;
-        let dec_ivar_series = df.column("dec_ivar")?;
         let type_series = df.column("type")?;
-        let flux_r_series = df.column("flux_r")?;
-        let nobs_g_series = df.column("nobs_g")?;
-        let nobs_r_series = df.column("nobs_r")?;
-        let nobs_z_series = df.column("nobs_z")?;
-        let fitbits_series = df.column("fitbits")?;
-        let shape_r_series = df.column("shape_r")?;
-        let shape_r_ivar_series = df.column("shape_r_ivar")?;
-        let shape_e1_series = df.column("shape_e1")?;
-        let shape_e1_ivar_series = df.column("shape_e1_ivar")?;
-        let shape_e2_series = df.column("shape_e2")?;
-        let shape_e2_ivar_series = df.column("shape_e2_ivar")?;
-        let mw_transmission_r_series = df.column("mw_transmission_r")?;
-        let z_phot_mean_series = df.column("z_phot_mean")?;
-        let z_phot_std_series = df.column("z_phot_std")?;
+        let ebv_series = df.column("ebv")?;
         let z_spec_series = df.column("z_spec")?;
+        let survey_series = df.column("survey")?;
+        let z_phot_mean_series = df.column("z_phot_mean")?;
+        let z_phot_median_series = df.column("z_phot_median")?;
+        let z_phot_std_series = df.column("z_phot_std")?;
+        let z_phot_l95_series = df.column("z_phot_l95")?;
+        let z_phot_u95_series = df.column("z_phot_u95")?;
+        let flux_g_series = df.column("flux_g")?;
+        let flux_r_series = df.column("flux_r")?;
+        let flux_i_series = df.column("flux_i")?;
+        let flux_z_series = df.column("flux_z")?;
+        let flux_w1_series = df.column("flux_w1")?;
+        let flux_w2_series = df.column("flux_w2")?;
+        let flux_w3_series = df.column("flux_w3")?;
+        let flux_w4_series = df.column("flux_w4")?;
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -841,7 +842,12 @@ impl ParquetRowBatch for LSDR10 {
                 .i32()?
                 .get(i)
                 .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
-            let id = format!("{}_{}_{}",  release, brickid, objid);
+            // Same lsid formula as the LS minifiers, so this collection joins
+            // directly against LS_DR10_PHOTOZ on _id.
+            let shift: u64 = if release >= 10000 { 20 } else { 16 };
+            let id = ((objid as u64)
+                + ((brickid as u64) << shift)
+                + ((release as u64) << 40)) as i64;
             let ra = ra_series
                 .f64()?
                 .get(i)
@@ -850,51 +856,33 @@ impl ParquetRowBatch for LSDR10 {
                 .f64()?
                 .get(i)
                 .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
-            let ra_ivar = ra_ivar_series.f32()?.get(i);
-            let dec_ivar = dec_ivar_series.f32()?.get(i);
             let objtype = type_series
                 .str()?
                 .get(i)
                 .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
                 .to_string();
-            let flux_r = flux_r_series.f32()?.get(i);
-            let nobs_g = nobs_g_series.i16()?.get(i).map(|v| v as i32);
-            let nobs_r = nobs_r_series.i16()?.get(i).map(|v| v as i32);
-            let nobs_z = nobs_z_series.i16()?.get(i).map(|v| v as i32);
-            let fitbits = fitbits_series.i16()?.get(i).map(|v| v as i32);
-            let shape_r = shape_r_series.f32()?.get(i);
-            let shape_r_ivar = shape_r_ivar_series.f32()?.get(i);
-            let shape_e1 = shape_e1_series.f32()?.get(i);
-            let shape_e1_ivar = shape_e1_ivar_series.f32()?.get(i);
-            let shape_e2 = shape_e2_series.f32()?.get(i);
-            let shape_e2_ivar = shape_e2_ivar_series.f32()?.get(i);
-            let mw_transmission_r = mw_transmission_r_series.f32()?.get(i);
-            let z_phot_mean = z_phot_mean_series.f32()?.get(i);
-            let z_phot_std = z_phot_std_series.f32()?.get(i);
-            let z_spec = z_spec_series.f32()?.get(i);
 
             results.push(LSDR10 {
                 id,
                 ra,
                 dec,
-                ra_ivar,
-                dec_ivar,
                 objtype,
-                flux_r,
-                nobs_g,
-                nobs_r,
-                nobs_z,
-                fitbits,
-                shape_r,
-                shape_r_ivar,
-                shape_e1,
-                shape_e1_ivar,
-                shape_e2,
-                shape_e2_ivar,
-                mw_transmission_r,
-                z_phot_mean,
-                z_phot_std,
-                z_spec,
+                ebv: ebv_series.f32()?.get(i),
+                z_spec: z_spec_series.f32()?.get(i),
+                survey: survey_series.str()?.get(i).map(|v| v.to_string()),
+                z_phot_mean: z_phot_mean_series.f32()?.get(i),
+                z_phot_median: z_phot_median_series.f32()?.get(i),
+                z_phot_std: z_phot_std_series.f32()?.get(i),
+                z_phot_l95: z_phot_l95_series.f32()?.get(i),
+                z_phot_u95: z_phot_u95_series.f32()?.get(i),
+                flux_g: flux_g_series.f32()?.get(i),
+                flux_r: flux_r_series.f32()?.get(i),
+                flux_i: flux_i_series.f32()?.get(i),
+                flux_z: flux_z_series.f32()?.get(i),
+                flux_w1: flux_w1_series.f32()?.get(i),
+                flux_w2: flux_w2_series.f32()?.get(i),
+                flux_w3: flux_w3_series.f32()?.get(i),
+                flux_w4: flux_w4_series.f32()?.get(i),
             });
         }
         Ok(results)

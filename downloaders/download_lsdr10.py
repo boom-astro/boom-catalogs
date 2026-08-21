@@ -15,32 +15,33 @@ load_dotenv()
 LSDR10_OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr10/"
 
 LSDR10_COLUMNS = [
+    # key columns: OBJID is only unique within a brick, so RELEASE+BRICKID
+    # are required to build a unique _id
     "RELEASE",
     "BRICKID",
     "OBJID",
-    "SHAPE_R",
-    "SHAPE_R_IVAR",
-    "SHAPE_E1",
-    "SHAPE_E1_IVAR",
-    "SHAPE_E2",
-    "SHAPE_E2_IVAR",
-    "RA",
     "TYPE",
+    "RA",
     "DEC",
-    "FLUX_R",
-    "NOBS_G",
-    "NOBS_R",
-    "NOBS_Z",
-    "FITBITS",
-    "RA_IVAR",
-    "DEC_IVAR",
-    "MW_TRANSMISSION_R",
-    "Z_PHOT_MEAN",
-    "Z_PHOT_STD",
+    "EBV",
     "Z_SPEC",
+    "SURVEY",
+    "Z_PHOT_MEAN",
+    "Z_PHOT_MEDIAN",
+    "Z_PHOT_STD",
+    "Z_PHOT_L95",
+    "Z_PHOT_U95",
+    "FLUX_G",
+    "FLUX_R",
+    "FLUX_I",
+    "FLUX_Z",
+    "FLUX_W1",
+    "FLUX_W2",
+    "FLUX_W3",
+    "FLUX_W4",
 ]
 
-CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey_dr10.1"
+CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey"
 DATASET_URL = f"{CATALOG_BASE}/dataset"
 
 parser = argparse.ArgumentParser(description="Download Legacy Survey DR10.1 catalog parquet files in parallel.")
