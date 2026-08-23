@@ -773,6 +773,128 @@ impl HasCoordinates for AllWISE {
     }
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LSDR10 {
+    /// Legacy Survey unique id: objid + (brickid << N) + (release << 40),
+    /// N = 20 for DR10+ (release >= 10000), else 16. Matches `LsDr10photoz::lsid`.
+    #[serde(rename(serialize = "_id"))]
+    pub id: i64,
+    pub ra: f64,
+    pub dec: f64,
+    #[serde(rename(deserialize = "type"))]
+    pub objtype: String,
+    pub ebv: Option<f32>,
+    pub z_spec: Option<f32>,
+    pub survey: Option<String>,
+    pub z_phot_mean: Option<f32>,
+    pub z_phot_median: Option<f32>,
+    pub z_phot_std: Option<f32>,
+    pub z_phot_l95: Option<f32>,
+    pub z_phot_u95: Option<f32>,
+    pub flux_g: Option<f32>,
+    pub flux_r: Option<f32>,
+    pub flux_i: Option<f32>,
+    pub flux_z: Option<f32>,
+    pub flux_w1: Option<f32>,
+    pub flux_w2: Option<f32>,
+    pub flux_w3: Option<f32>,
+    pub flux_w4: Option<f32>,
+}
+
+impl ParquetRowBatch for LSDR10 {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
+        // RELEASE + BRICKID + OBJID form the unique key; OBJID alone repeats across bricks.
+        let release_series = df.column("release")?;
+        let brickid_series = df.column("brickid")?;
+        let objid_series = df.column("objid")?;
+        let ra_series = df.column("ra")?;
+        let dec_series = df.column("dec")?;
+        let type_series = df.column("type")?;
+        let ebv_series = df.column("ebv")?;
+        let z_spec_series = df.column("z_spec")?;
+        let survey_series = df.column("survey")?;
+        let z_phot_mean_series = df.column("z_phot_mean")?;
+        let z_phot_median_series = df.column("z_phot_median")?;
+        let z_phot_std_series = df.column("z_phot_std")?;
+        let z_phot_l95_series = df.column("z_phot_l95")?;
+        let z_phot_u95_series = df.column("z_phot_u95")?;
+        let flux_g_series = df.column("flux_g")?;
+        let flux_r_series = df.column("flux_r")?;
+        let flux_i_series = df.column("flux_i")?;
+        let flux_z_series = df.column("flux_z")?;
+        let flux_w1_series = df.column("flux_w1")?;
+        let flux_w2_series = df.column("flux_w2")?;
+        let flux_w3_series = df.column("flux_w3")?;
+        let flux_w4_series = df.column("flux_w4")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            let release = release_series
+                .i16()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing release at row {}", i))? as i32;
+            let brickid = brickid_series
+                .i32()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing brickid at row {}", i))?;
+            let objid = objid_series
+                .i32()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
+            // Same lsid formula as the LS minifiers, so this collection joins
+            // directly against LS_DR10_PHOTOZ on _id.
+            let shift: u64 = if release >= 10000 { 20 } else { 16 };
+            let id = ((objid as u64)
+                + ((brickid as u64) << shift)
+                + ((release as u64) << 40)) as i64;
+            let ra = ra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing ra at row {}", i))?;
+            let dec = dec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
+            let objtype = type_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
+                .to_string();
+
+            results.push(LSDR10 {
+                id,
+                ra,
+                dec,
+                objtype,
+                ebv: ebv_series.f32()?.get(i),
+                z_spec: z_spec_series.f32()?.get(i),
+                survey: survey_series.str()?.get(i).map(|v| v.to_string()),
+                z_phot_mean: z_phot_mean_series.f32()?.get(i),
+                z_phot_median: z_phot_median_series.f32()?.get(i),
+                z_phot_std: z_phot_std_series.f32()?.get(i),
+                z_phot_l95: z_phot_l95_series.f32()?.get(i),
+                z_phot_u95: z_phot_u95_series.f32()?.get(i),
+                flux_g: flux_g_series.f32()?.get(i),
+                flux_r: flux_r_series.f32()?.get(i),
+                flux_i: flux_i_series.f32()?.get(i),
+                flux_z: flux_z_series.f32()?.get(i),
+                flux_w1: flux_w1_series.f32()?.get(i),
+                flux_w2: flux_w2_series.f32()?.get(i),
+                flux_w3: flux_w3_series.f32()?.get(i),
+                flux_w4: flux_w4_series.f32()?.get(i),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for LSDR10 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[serde_as]
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
@@ -1291,6 +1413,7 @@ pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
     AllWISE,
+    LSDR10,
     LsDr10photoz,
 }
 

@@ -1,4 +1,6 @@
 requests
+aiohttp
+fsspec
 tqdm
 pandas
 pyarrow
