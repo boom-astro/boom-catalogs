@@ -3,8 +3,9 @@ import os
 import time
 import argparse
 import requests
+import fsspec
+import aiohttp
 import pyarrow.parquet as pq
-from io import BytesIO
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
@@ -65,6 +66,16 @@ def get_partitions():
     return partitions
 
 
+# Timeouts matter here: without them a stalled connection parks a worker thread
+# forever instead of falling through to the retry loop below.
+HTTP_FS = fsspec.filesystem(
+    "http",
+    client_kwargs={
+        "timeout": aiohttp.ClientTimeout(total=600, sock_connect=30, sock_read=60)
+    },
+)
+
+
 def download_partition(arguments):
     order, pixel, output_dir = arguments
     out_path = os.path.join(output_dir, f"batch_order{order}_pix{pixel}.parquet")
@@ -75,12 +86,14 @@ def download_partition(arguments):
     url = f"{DATASET_URL}/Norder={order}/Dir={dir_val}/Npix={pixel}.parquet"
     for attempt in range(5):
         try:
-            resp = requests.get(url, timeout=60)
-            resp.raise_for_status()
-            # Read only the columns we need, rename to lowercase
-            table = pq.read_table(BytesIO(resp.content), columns=LSDR10_COLUMNS)
+            # Read over HTTP range requests so only the columns we need cross the
+            # wire; the full partition is ~20x larger than the subset we keep.
+            with HTTP_FS.open(url, "rb") as handle:
+                table = pq.read_table(handle, columns=LSDR10_COLUMNS)
             table = table.rename_columns([c.lower() for c in table.column_names])
-            pq.write_table(table, out_path)
+            tmp_path = out_path + ".part"
+            pq.write_table(table, tmp_path)
+            os.replace(tmp_path, out_path)
             del table
             return
         except Exception as e:
