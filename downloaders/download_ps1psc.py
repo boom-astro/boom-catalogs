@@ -44,8 +44,9 @@ def download_file(arguments):
         headers = {"Range": f"bytes={have}-"} if have else {}
         try:
             r = requests.get(url, headers=headers, stream=True, timeout=(10, 120))
-            if r.status_code == 416:  # already complete
-                break
+            if r.status_code == 416:  # range past EOF: the .part is already complete
+                os.rename(part, dest)
+                return None
             if have and r.status_code == 200:  # server ignored Range, restart cleanly
                 have = 0
                 os.remove(part)
