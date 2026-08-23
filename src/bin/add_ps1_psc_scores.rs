@@ -57,11 +57,11 @@ async fn worker(
     db: String,
     collection: String,
     batch_size: usize,
-) -> Result<u64> {
+) -> Result<(u64, u64)> {
     let client = Client::with_uri_str(&uri).await?;
     let namespace = Namespace::new(db, collection);
     let mut models: Vec<WriteModel> = Vec::with_capacity(batch_size);
-    let mut modified = 0u64;
+    let (mut matched, mut modified) = (0u64, 0u64);
 
     while let Ok(score) = receiver.recv().await {
         models.push(
@@ -73,11 +73,15 @@ async fn worker(
                 .into(),
         );
         if models.len() >= batch_size {
-            modified += flush(&client, &mut models, worker_id).await;
+            let (m, u) = flush(&client, &mut models, worker_id).await;
+            matched += m;
+            modified += u;
         }
     }
-    modified += flush(&client, &mut models, worker_id).await;
-    Ok(modified)
+    let (m, u) = flush(&client, &mut models, worker_id).await;
+    matched += m;
+    modified += u;
+    Ok((matched, modified))
 }
 
 /// Read one PSC file and push every (objid, ps_score) pair into the channel.
