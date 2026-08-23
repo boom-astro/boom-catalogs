@@ -33,20 +33,19 @@ struct Score {
     ps_score: f64,
 }
 
-async fn flush(
-    client: &Client,
-    models: &mut Vec<WriteModel>,
-    worker_id: usize,
-) -> u64 {
+async fn flush(client: &Client, models: &mut Vec<WriteModel>, worker_id: usize) -> (u64, u64) {
     if models.is_empty() {
-        return 0;
+        return (0, 0);
     }
     let batch = std::mem::take(models);
     match client.bulk_write(batch).ordered(false).await {
-        Ok(r) => r.modified_count.max(0) as u64,
+        Ok(r) => (
+            r.matched_count.max(0) as u64,
+            r.modified_count.max(0) as u64,
+        ),
         Err(e) => {
             eprintln!("Worker {}: bulk_write error: {}", worker_id, e);
-            0
+            (0, 0)
         }
     }
 }
