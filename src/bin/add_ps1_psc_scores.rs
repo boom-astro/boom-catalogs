@@ -155,15 +155,20 @@ async fn main() -> Result<()> {
     }
     drop(sender);
 
-    let mut modified = 0u64;
+    let (mut matched, mut modified) = (0u64, 0u64);
     for h in handles {
-        modified += h.await??;
+        let (m, u) = h.await??;
+        matched += m;
+        modified += u;
     }
-    println!("Sent {} scores; {} documents modified.", sent, modified);
-    if modified < sent {
+    println!(
+        "Sent {} scores; {} matched, {} modified.",
+        sent, matched, modified
+    );
+    if matched < sent {
         println!(
             "note: {} scores matched no document (expected if the PSC covers objects absent from this collection)",
-            sent - modified
+            sent - matched
         );
     }
     Ok(())
