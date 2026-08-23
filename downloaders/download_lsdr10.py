@@ -40,6 +40,11 @@ LSDR10_COLUMNS = [
     "FLUX_W2",
     "FLUX_W3",
     "FLUX_W4",
+    # tractor ellipse, needed to compute a directional light radius for host
+    # association. SHAPE_R is 0 for point sources.
+    "SHAPE_R",
+    "SHAPE_E1",
+    "SHAPE_E2",
 ]
 
 CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey"

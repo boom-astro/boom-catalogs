@@ -800,6 +800,11 @@ pub struct LSDR10 {
     pub flux_w2: Option<f32>,
     pub flux_w3: Option<f32>,
     pub flux_w4: Option<f32>,
+    /// Tractor ellipse: half-light radius in arcsec and the two ellipticity
+    /// components. `shape_r` is 0 for point sources, which have no extent.
+    pub shape_r: Option<f32>,
+    pub shape_e1: Option<f32>,
+    pub shape_e2: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -827,6 +832,9 @@ impl ParquetRowBatch for LSDR10 {
         let flux_w2_series = df.column("flux_w2")?;
         let flux_w3_series = df.column("flux_w3")?;
         let flux_w4_series = df.column("flux_w4")?;
+        let shape_r_series = df.column("shape_r")?;
+        let shape_e1_series = df.column("shape_e1")?;
+        let shape_e2_series = df.column("shape_e2")?;
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -883,6 +891,9 @@ impl ParquetRowBatch for LSDR10 {
                 flux_w2: flux_w2_series.f32()?.get(i),
                 flux_w3: flux_w3_series.f32()?.get(i),
                 flux_w4: flux_w4_series.f32()?.get(i),
+                shape_r: shape_r_series.f32()?.get(i),
+                shape_e1: shape_e1_series.f32()?.get(i),
+                shape_e2: shape_e2_series.f32()?.get(i),
             });
         }
         Ok(results)
