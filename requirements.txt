@@ -11,4 +11,5 @@ python-dotenv
 bs4
 astroquery
 lsdb
+s3fs
 duckdb

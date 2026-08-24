@@ -1440,12 +1440,92 @@ pub enum CsvCatalogs {
     Galex,
 }
 
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PanSTARRS {
+    #[serde(rename(serialize = "_id"))]
+    pub obj_id: i64,
+    #[serde(rename(serialize = "ra"))]
+    pub ra_mean: f64,
+    #[serde(rename(serialize = "dec"))]
+    pub dec_mean: f64,
+    #[serde(rename(serialize = "gMeanPSFMag"))]
+    pub g_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "gMeanPSFMagErr"))]
+    pub g_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "rMeanPSFMag"))]
+    pub r_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "rMeanPSFMagErr"))]
+    pub r_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "iMeanPSFMag"))]
+    pub i_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "iMeanPSFMagErr"))]
+    pub i_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "zMeanPSFMag"))]
+    pub z_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "zMeanPSFMagErr"))]
+    pub z_mean_psf_mag_err  : Option<f64>,
+    #[serde(rename(serialize = "yMeanPSFMag"))]
+    pub y_mean_psf_mag      : Option<f64>,
+    #[serde(rename(serialize = "yMeanPSFMagErr"))]
+    pub y_mean_psf_mag_err  : Option<f64>,
+}
+
+impl ParquetRowBatch for PanSTARRS {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<PanSTARRS>> {
+        let obj_id = df.column("objID")?;
+        let ra_mean = df.column("raMean")?;
+        let dec_mean = df.column("decMean")?;
+        let g_mean_psf_mag = df.column("gMeanPSFMag")?;     
+        let g_mean_psf_mag_err = df.column("gMeanPSFMagErr")?;
+        let r_mean_psf_mag = df.column("rMeanPSFMag")?;
+        let r_mean_psf_mag_err = df.column("rMeanPSFMagErr")?; 
+        let i_mean_psf_mag  =  df.column("iMeanPSFMag")?;   
+        let i_mean_psf_mag_err  = df.column("iMeanPSFMagErr")?;
+        let z_mean_psf_mag = df.column("zMeanPSFMag")?;
+        let z_mean_psf_mag_err = df.column("zMeanPSFMagErr")?;
+        let y_mean_psf_mag = df.column("yMeanPSFMag")?;
+        let y_mean_psf_mag_err = df.column("yMeanPSFMagErr")?;
+
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            results.push(PanSTARRS {
+                obj_id: obj_id.i64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing objID at row {}", i))?,
+                ra_mean: ra_mean.f64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing raMean at row {}", i))?,
+                dec_mean: dec_mean.f64()?.get(i)
+                    .ok_or_else(|| anyhow::anyhow!("Missing decMean at row {}", i))?,
+                g_mean_psf_mag: g_mean_psf_mag.f64()?.get(i),
+                g_mean_psf_mag_err: g_mean_psf_mag_err.f64()?.get(i),
+                r_mean_psf_mag: r_mean_psf_mag.f64()?.get(i),
+                r_mean_psf_mag_err: r_mean_psf_mag_err.f64()?.get(i),
+                i_mean_psf_mag: i_mean_psf_mag.f64()?.get(i),
+                i_mean_psf_mag_err: i_mean_psf_mag_err.f64()?.get(i),
+                z_mean_psf_mag: z_mean_psf_mag.f64()?.get(i),
+                z_mean_psf_mag_err: z_mean_psf_mag_err.f64()?.get(i),
+                y_mean_psf_mag: y_mean_psf_mag.f64()?.get(i),
+                y_mean_psf_mag_err: y_mean_psf_mag_err.f64()?.get(i),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for PanSTARRS {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ParquetCatalogs {
     GaiaPS1Xmatch,
     CatWISE2020,
     AllWISE,
+    PanSTARRS,
     LSDR10,
     LsDr10photoz,
 }

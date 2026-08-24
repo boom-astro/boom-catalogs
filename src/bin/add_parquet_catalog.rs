@@ -2,7 +2,7 @@ use anyhow::Result;
 use boom_catalogs::db::from_uri;
 use boom_catalogs::parquet::process_parquet;
 use boom_catalogs::types::{
-    AllWISE, CatWISE2020, GaiaPS1Xmatch, LSDR10, LsDr10photoz, ParquetCatalogs,
+    AllWISE, CatWISE2020, GaiaPS1Xmatch, LSDR10, LsDr10photoz, PanSTARRS, ParquetCatalogs,
 };
 use clap::Parser;
 use mongodb::bson::Document;
@@ -145,8 +145,20 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
+                )
+                .await
+            }
+            ParquetCatalogs::PanSTARRS => {
+                process_parquet::<PanSTARRS>(
+                    uri,
+                    db,
+                    collection,
+                    path.clone(),
+                    args.num_workers,
+                    args.batch_size,
+                    args.channel_capacity,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
