@@ -247,6 +247,9 @@ impl HasCoordinates for Gaia {
 // Deliberately not #[skip_serializing_none]: that drops None fields from the document
 // entirely, and consumers cross-matching NED then error on the missing key. Every field
 // is always present, with absent quantities stored as an explicit null.
+//
+// Mongo keys mirror the NED-LVS FITS column names exactly, so a projection can be written
+// against the published column list. Fields whose Rust name already matches need no rename.
 #[serde_as]
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct Ned {
@@ -260,22 +263,46 @@ pub struct Ned {
     z_tech: String,
     z_qual: bool,
     z_refcode: String,
+    // redshift-independent for only ~1.2% of rows; gate on DistMpc_method before
+    // treating this as anything other than a converted redshift
+    #[serde(rename(serialize = "DistMpc"))]
     dist_mpc: Option<f64>,
+    #[serde(rename(serialize = "DistMpc_unc"))]
     dist_mpc_unc: Option<f64>,
+    #[serde(rename(serialize = "DistMpc_method"))]
     dist_mpc_method: String,
     // angular diameter ellipse, added to NED-LVS in the 2026-04-24 release
+    #[serde(rename(serialize = "Diam"))]
     diam: Option<f64>,
+    #[serde(rename(serialize = "Diam_ra"))]
     diam_ra: Option<f64>,
+    #[serde(rename(serialize = "Diam_dec"))]
     diam_dec: Option<f64>,
+    #[serde(rename(serialize = "Diam_ba"))]
     diam_ba: Option<f64>,
+    #[serde(rename(serialize = "Diam_pa"))]
     diam_pa: Option<f64>,
+    #[serde(rename(serialize = "Diam_survey"))]
     diam_survey: String,
+    #[serde(rename(serialize = "Diam_filt"))]
     diam_filt: String,
+    #[serde(rename(serialize = "Diam_refcode"))]
     diam_refcode: String,
+    #[serde(rename(serialize = "Diam_qual"))]
     diam_qual: bool,
     ebv: Option<f64>,
+    #[serde(rename(serialize = "m_Ks"))]
+    m_ks: Option<f64>,
+    #[serde(rename(serialize = "m_Ks_unc"))]
+    m_ks_unc: Option<f64>,
+    // 2MASS photometry provenance, e.g. "2MASX"; empty when no 2MASS match
+    #[serde(rename(serialize = "tMASSphot"))]
+    tmass_phot: String,
+    #[serde(rename(serialize = "Mstar"))]
     m_star: Option<f64>,
+    #[serde(rename(serialize = "Mstar_unc"))]
     m_star_unc: Option<f64>,
+    #[serde(rename(serialize = "MLratio"))]
     ml_ratio: Option<f64>,
 }
 
@@ -317,6 +344,9 @@ impl FitsRowBatch for Ned {
         let diam_refcode_col: Vec<String> = hdu.read_col_range(fptr, "Diam_refcode", &range)?;
         let diam_qual_col: Vec<bool> = hdu.read_col_range(fptr, "Diam_qual", &range)?;
         let ebv_col: Vec<f64> = hdu.read_col_range(fptr, "ebv", &range)?;
+        let m_ks_col: Vec<f64> = hdu.read_col_range(fptr, "m_Ks", &range)?;
+        let m_ks_unc_col: Vec<f64> = hdu.read_col_range(fptr, "m_Ks_unc", &range)?;
+        let tmass_phot_col: Vec<String> = hdu.read_col_range(fptr, "tMASSphot", &range)?;
         let m_star_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar", &range)?;
         let m_star_unc_col: Vec<f64> = hdu.read_col_range(fptr, "Mstar_unc", &range)?;
         let ml_ratio_col: Vec<f64> = hdu.read_col_range(fptr, "MLratio", &range)?;
@@ -347,6 +377,9 @@ impl FitsRowBatch for Ned {
                 diam_refcode: diam_refcode_col[i].clone(),
                 diam_qual: diam_qual_col[i],
                 ebv: float_nullable(ebv_col[i]),
+                m_ks: float_nullable(m_ks_col[i]),
+                m_ks_unc: float_nullable(m_ks_unc_col[i]),
+                tmass_phot: tmass_phot_col[i].clone(),
                 m_star: float_nullable(m_star_col[i]),
                 m_star_unc: float_nullable(m_star_unc_col[i]),
                 ml_ratio: float_nullable(ml_ratio_col[i]),
@@ -1422,4 +1455,63 @@ pub enum ParquetCatalogs {
 pub enum AsciiCatalogs {
     VSX,
     TwoMass,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mongo keys must match the NED-LVS FITS column names, since crossmatch
+    // projections are written against those. Mongo drops a projection on an absent
+    // field silently, so a rename that drifts here fails without any error.
+    #[test]
+    fn ned_serializes_under_fits_column_names() {
+        let value = serde_json::to_value(Ned::default()).unwrap();
+        let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(|k| &**k).collect();
+        keys.sort_unstable();
+
+        let mut expected = vec![
+            "_id", // objname
+            "ra",
+            "dec",
+            "objtype",
+            "z",
+            "z_unc",
+            "z_tech",
+            "z_qual",
+            "z_refcode",
+            "DistMpc",
+            "DistMpc_unc",
+            "DistMpc_method",
+            "Diam",
+            "Diam_ra",
+            "Diam_dec",
+            "Diam_ba",
+            "Diam_pa",
+            "Diam_survey",
+            "Diam_filt",
+            "Diam_refcode",
+            "Diam_qual",
+            "ebv",
+            "m_Ks",
+            "m_Ks_unc",
+            "tMASSphot",
+            "Mstar",
+            "Mstar_unc",
+            "MLratio",
+        ];
+        expected.sort_unstable();
+
+        assert_eq!(keys, expected);
+    }
+
+    // Absent values must serialize as explicit null rather than being omitted:
+    // consumers reading a missing key error out and flood the scheduler logs.
+    #[test]
+    fn ned_keeps_absent_values_as_null() {
+        let value = serde_json::to_value(Ned::default()).unwrap();
+        assert!(value.get("DistMpc").unwrap().is_null());
+        assert!(value.get("Diam").unwrap().is_null());
+        assert!(value.get("Mstar").unwrap().is_null());
+    }
 }
