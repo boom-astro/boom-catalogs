@@ -54,7 +54,9 @@ where
                 Ok(_) => {
                     total_processed += docs.len();
                 }
-                Err(_e) => {}
+                Err(e) => {
+                    eprintln!("Worker {}: error in batch insert: {}", worker_id, e);
+                }
             }
             docs.clear();
         }
@@ -68,8 +70,8 @@ where
             Ok(_) => {
                 total_processed += docs.len();
             }
-            Err(_e) => {
-                eprintln!("Worker {}: Error in final insert", worker_id);
+            Err(e) => {
+                eprintln!("Worker {}: error in final insert: {}", worker_id, e);
             }
         }
     }
@@ -86,33 +88,16 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub async fn new<T>(
+    pub async fn new(
         mongodb_uri: String,
         db_name: String,
         collection_name: String,
         num_workers: usize,
         batch_size: usize,
         channel_capacity: usize,
-        drop_existing_collection: bool,
-        init_indexes: bool,
-    ) -> Result<Self>
-    where
-        T: HasCoordinates,
-    {
-        // Create collection and index
-        let db = from_uri(&mongodb_uri, &db_name).await?;
-        let collection = db.collection::<Document>(&collection_name);
-        if drop_existing_collection {
-            collection.drop().await?;
-        }
-        if init_indexes && T::has_coordinates() {
-            create_index(
-                &collection,
-                doc! {"coordinates.radec_geojson": "2dsphere"},
-                false,
-            )
-            .await?;
-        }
+    ) -> Result<Self> {
+        // fail fast on a bad URI or unreachable server, rather than in every worker
+        from_uri(&mongodb_uri, &db_name).await?;
 
         Ok(Self {
             mongodb_uri,
@@ -122,6 +107,25 @@ impl Processor {
             batch_size,
             channel_capacity,
         })
+    }
+
+    /// Builds the coordinate index. Call once, after every insert has finished:
+    /// an index that exists during the load has to be maintained on each write.
+    pub async fn init_indexes<T>(&self) -> Result<()>
+    where
+        T: HasCoordinates,
+    {
+        if !T::has_coordinates() {
+            return Ok(());
+        }
+        let db = from_uri(&self.mongodb_uri, &self.db_name).await?;
+        let collection = db.collection::<Document>(&self.collection_name);
+        create_index(
+            &collection,
+            doc! {"coordinates.radec_geojson": "2dsphere"},
+            false,
+        )
+        .await
     }
 
     /// Initializes the workers and returns the sender and the vector of worker handles
