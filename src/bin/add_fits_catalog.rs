@@ -1,7 +1,9 @@
 use anyhow::Result;
+use boom_catalogs::db::from_uri;
 use boom_catalogs::fits::process_fits;
 use boom_catalogs::types::{DesiDr1, ERosita, FitsCatalogs, Milliquas, Ned, UVGapsXGaia};
 use clap::Parser;
+use mongodb::bson::Document;
 
 #[derive(Parser)]
 struct Cli {
@@ -53,73 +55,76 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
+    // Drop the collection once up front, before any file is processed.
+    if args.drop_existing_collection {
+        let db = from_uri(&args.uri, &args.db).await?;
+        let collection = db.collection::<Document>(&args.collection);
+        collection.drop().await?;
+        println!("Dropped existing collection: {}", args.collection);
+    }
+
     match args.type_name {
         FitsCatalogs::Ned => {
             process_fits::<Ned>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;
         }
         FitsCatalogs::Milliquas => {
             process_fits::<Milliquas>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;
         }
         FitsCatalogs::ERosita => {
             process_fits::<ERosita>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;
         }
         FitsCatalogs::UVGapsXGaia => {
             process_fits::<UVGapsXGaia>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;
         }
         FitsCatalogs::DesiDr1 => {
             process_fits::<DesiDr1>(
-                args.uri,
-                args.db,
-                args.collection,
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
                 args.path,
                 args.num_workers,
                 args.batch_size,
                 args.channel_capacity,
-                args.drop_existing_collection,
                 args.init_indexes,
             )
             .await?;

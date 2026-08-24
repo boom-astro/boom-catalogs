@@ -106,7 +106,6 @@ pub async fn process_ascii<T>(
     num_workers: usize,
     batch_size: usize,
     channel_capacity: usize,
-    drop_existing_collection: bool,
     init_indexes: bool,
 ) -> Result<()>
 where
@@ -158,15 +157,13 @@ where
 
     println!("Found {} files to process", files.len());
 
-    let processor = Processor::new::<T>(
+    let processor = Processor::new(
         mongodb_uri,
         db_name,
         collection_name,
         num_workers,
         batch_size,
         channel_capacity,
-        drop_existing_collection,
-        init_indexes,
     )
     .await?;
     let (s, workers) = processor.init_workers::<T>();
@@ -230,6 +227,10 @@ where
     drop(s);
     // Wait for all workers to complete
     let _ = processor.close_workers(workers).await;
+
+    if init_indexes {
+        processor.init_indexes::<T>().await?;
+    }
 
     Ok(())
 }

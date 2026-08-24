@@ -2,7 +2,7 @@ use anyhow::Result;
 use boom_catalogs::db::from_uri;
 use boom_catalogs::parquet::process_parquet;
 use boom_catalogs::types::{
-    AllWISE, CatWISE2020, GaiaPS1Xmatch, LsDr10photoz, PanSTARRS, ParquetCatalogs,
+    AllWISE, CatWISE2020, GaiaPS1Xmatch, LSDR10, LsDr10photoz, PanSTARRS, ParquetCatalogs,
 };
 use clap::Parser;
 use mongodb::bson::Document;
@@ -57,7 +57,9 @@ struct Cli {
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
-    // Drop the collection once before processing any files, not per-file
+    // Drop the collection once up front, not per file: with a directory of
+    // inputs, dropping inside the loop wipes every file ingested before the
+    // last one.
     if args.drop_existing_collection {
         let db = from_uri(&args.uri, &args.db).await?;
         let collection = db.collection::<Document>(&args.collection);
@@ -88,6 +90,8 @@ async fn main() -> Result<()> {
     println!("Found {} files to process.", paths.len());
     for (i, path) in paths.iter().enumerate() {
         println!("Processing file: {} ({} of {})", path, i + 1, paths.len());
+        // index once the whole directory is in, not per file
+        let is_last = i + 1 == paths.len();
         let uri = args.uri.clone();
         let db = args.db.clone();
         let collection = args.collection.clone();
@@ -102,8 +106,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -116,8 +119,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -130,8 +132,20 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
+                )
+                .await
+            }
+            ParquetCatalogs::LSDR10 => {
+                process_parquet::<LSDR10>(
+                    uri,
+                    db,
+                    collection,
+                    path.clone(),
+                    args.num_workers,
+                    args.batch_size,
+                    args.channel_capacity,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -144,8 +158,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    false,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
@@ -158,8 +171,7 @@ async fn main() -> Result<()> {
                     args.num_workers,
                     args.batch_size,
                     args.channel_capacity,
-                    args.drop_existing_collection,
-                    args.init_indexes,
+                    args.init_indexes && is_last,
                 )
                 .await
             }
