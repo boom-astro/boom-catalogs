@@ -838,6 +838,19 @@ pub struct LSDR10 {
     pub shape_r: Option<f32>,
     pub shape_e1: Option<f32>,
     pub shape_e2: Option<f32>,
+    /// Sersic index, fit only for SER objects. Converting the half-light radius
+    /// to a 25 mag/arcsec^2 isophotal diameter needs it; REX and EXP are n = 1
+    /// and DEV is n = 4 by definition, so a null here is not a missing value for
+    /// those types.
+    pub sersic: Option<f32>,
+    /// Inverse variance on `flux_r`, giving the r-band signal-to-noise as
+    /// `flux_r * sqrt(flux_ivar_r)`. Separates a marginal REX detection from a
+    /// real galaxy.
+    pub flux_ivar_r: Option<f32>,
+    /// Fraction of the r-band flux in this object's aperture contributed by
+    /// neighbours. High values mark blended sources inside a larger galaxy,
+    /// which are shredded fragments rather than hosts.
+    pub fracflux_r: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -868,6 +881,9 @@ impl ParquetRowBatch for LSDR10 {
         let shape_r_series = df.column("shape_r")?;
         let shape_e1_series = df.column("shape_e1")?;
         let shape_e2_series = df.column("shape_e2")?;
+        let sersic_series = df.column("sersic")?;
+        let flux_ivar_r_series = df.column("flux_ivar_r")?;
+        let fracflux_r_series = df.column("fracflux_r")?;
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -927,6 +943,9 @@ impl ParquetRowBatch for LSDR10 {
                 shape_r: shape_r_series.f32()?.get(i),
                 shape_e1: shape_e1_series.f32()?.get(i),
                 shape_e2: shape_e2_series.f32()?.get(i),
+                sersic: sersic_series.f32()?.get(i),
+                flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
+                fracflux_r: fracflux_r_series.f32()?.get(i),
             });
         }
         Ok(results)
