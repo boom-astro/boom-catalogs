@@ -32,6 +32,7 @@ COPY --from=builder /app/target/release/add_ascii_catalog /app/add_ascii_catalog
 COPY --from=builder /app/target/release/add_parquet_catalog /app/add_parquet_catalog
 COPY --from=builder /app/target/release/add_csv_catalog /app/add_csv_catalog
 COPY --from=builder /app/target/release/add_fits_catalog /app/add_fits_catalog
+COPY --from=builder /app/target/release/add_wtp_catalog /app/add_wtp_catalog
 
 # The entrypoint should just keep the container running forever
 ENTRYPOINT ["tail", "-f", "/dev/null"]
