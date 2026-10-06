@@ -806,9 +806,16 @@ impl HasCoordinates for AllWISE {
     }
 }
 
+/// A Legacy Survey source, shared by DR9 and DR10.
+///
+/// The two releases have the same schema apart from `flux_i`, which DR10 added
+/// and DR9 has no column for at all, so one type serves both and
+/// `ParquetCatalogs` has a variant each. Their `_id`s cannot collide: the
+/// release number is part of the id and DR9 uses 9010/9011/ 9012 against DR10's
+/// 10000/10002, so the two can share a collection or sit in their own.
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
-pub struct LSDR10 {
+pub struct LegacySurvey {
     /// Legacy Survey unique id: objid + (brickid << N) + (release << 40),
     /// N = 20 for DR10+ (release >= 10000), else 16. Matches `LsDr10photoz::lsid`.
     #[serde(rename(serialize = "_id"))]
@@ -853,8 +860,8 @@ pub struct LSDR10 {
     pub fracflux_r: Option<f32>,
 }
 
-impl ParquetRowBatch for LSDR10 {
-    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
+impl ParquetRowBatch for LegacySurvey {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LegacySurvey>> {
         // RELEASE + BRICKID + OBJID form the unique key; OBJID alone repeats across bricks.
         let release_series = df.column("release")?;
         let brickid_series = df.column("brickid")?;
@@ -872,7 +879,7 @@ impl ParquetRowBatch for LSDR10 {
         let z_phot_u95_series = df.column("z_phot_u95")?;
         let flux_g_series = df.column("flux_g")?;
         let flux_r_series = df.column("flux_r")?;
-        let flux_i_series = df.column("flux_i")?;
+        let flux_i_series = df.column("flux_i").ok();
         let flux_z_series = df.column("flux_z")?;
         let flux_w1_series = df.column("flux_w1")?;
         let flux_w2_series = df.column("flux_w2")?;
@@ -890,7 +897,8 @@ impl ParquetRowBatch for LSDR10 {
             let release = release_series
                 .i16()?
                 .get(i)
-                .ok_or_else(|| anyhow::anyhow!("Missing release at row {}", i))? as i32;
+                .ok_or_else(|| anyhow::anyhow!("Missing release at row {}", i))?
+                as i32;
             let brickid = brickid_series
                 .i32()?
                 .get(i)
@@ -902,9 +910,8 @@ impl ParquetRowBatch for LSDR10 {
             // Same lsid formula as the LS minifiers, so this collection joins
             // directly against LS_DR10_PHOTOZ on _id.
             let shift: u64 = if release >= 10000 { 20 } else { 16 };
-            let id = ((objid as u64)
-                + ((brickid as u64) << shift)
-                + ((release as u64) << 40)) as i64;
+            let id =
+                ((objid as u64) + ((brickid as u64) << shift) + ((release as u64) << 40)) as i64;
             let ra = ra_series
                 .f64()?
                 .get(i)
@@ -919,7 +926,7 @@ impl ParquetRowBatch for LSDR10 {
                 .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
                 .to_string();
 
-            results.push(LSDR10 {
+            results.push(LegacySurvey {
                 id,
                 ra,
                 dec,
@@ -934,7 +941,10 @@ impl ParquetRowBatch for LSDR10 {
                 z_phot_u95: z_phot_u95_series.f32()?.get(i),
                 flux_g: flux_g_series.f32()?.get(i),
                 flux_r: flux_r_series.f32()?.get(i),
-                flux_i: flux_i_series.f32()?.get(i),
+                flux_i: flux_i_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
                 flux_z: flux_z_series.f32()?.get(i),
                 flux_w1: flux_w1_series.f32()?.get(i),
                 flux_w2: flux_w2_series.f32()?.get(i),
@@ -952,7 +962,7 @@ impl ParquetRowBatch for LSDR10 {
     }
 }
 
-impl HasCoordinates for LSDR10 {
+impl HasCoordinates for LegacySurvey {
     fn has_coordinates() -> bool {
         true
     }
@@ -1556,6 +1566,7 @@ pub enum ParquetCatalogs {
     CatWISE2020,
     AllWISE,
     PanSTARRS,
+    LSDR9,
     LSDR10,
     LsDr10photoz,
 }
@@ -1623,5 +1634,86 @@ mod tests {
         assert!(value.get("DistMpc").unwrap().is_null());
         assert!(value.get("Diam").unwrap().is_null());
         assert!(value.get("Mstar").unwrap().is_null());
+    }
+
+    /// Build a frame shaped like one minified Legacy Survey row. `flux_i` is
+    /// appended only when `with_flux_i`, since DR9 has no i-band column at all.
+    fn legacy_survey_frame(release: i16, with_flux_i: bool) -> polars::prelude::DataFrame {
+        use polars::prelude::*;
+
+        let mut df = df![
+            "release" => [release],
+            "brickid" => [521251i32],
+            "objid" => [12i32],
+            "ra" => [294.5f64],
+            "dec" => [48.7f64],
+            "type" => ["REX"],
+            "ebv" => [0.1f32],
+            "z_spec" => [None::<f32>],
+            "survey" => [None::<&str>],
+            "z_phot_mean" => [0.42f32],
+            "z_phot_median" => [0.41f32],
+            "z_phot_std" => [0.05f32],
+            "z_phot_l95" => [0.30f32],
+            "z_phot_u95" => [0.55f32],
+            "flux_g" => [1.5f32],
+            "flux_r" => [2.5f32],
+            "flux_z" => [3.5f32],
+            "flux_w1" => [4.5f32],
+            "flux_w2" => [5.5f32],
+            "flux_w3" => [None::<f32>],
+            "flux_w4" => [None::<f32>],
+            "shape_r" => [1.2f32],
+            "shape_e1" => [0.1f32],
+            "shape_e2" => [-0.2f32],
+            "sersic" => [None::<f32>],
+            "flux_ivar_r" => [9.0f32],
+            "fracflux_r" => [0.01f32],
+        ]
+        .unwrap();
+
+        if with_flux_i {
+            df.with_column(Series::new("flux_i".into(), [6.5f32]))
+                .unwrap();
+        }
+
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        ParquetWriter::new(&mut buffer).finish(&mut df).unwrap();
+        buffer.set_position(0);
+        ParquetReader::new(buffer).finish().unwrap()
+    }
+
+    // DR9 sweeps carry no i-band column, so reading one must yield flux_i = None rather than
+    // failing on the missing column. The id also has to use the pre-DR10 16-bit brickid shift.
+    #[test]
+    fn legacy_survey_reads_dr9_without_flux_i() {
+        let rows = LegacySurvey::from_dataframe(&legacy_survey_frame(9011, false)).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].flux_i.is_none());
+        assert_eq!(rows[0].objtype, "REX");
+        assert_eq!(rows[0].id, 12 + (521251i64 << 16) + (9011i64 << 40));
+        assert!(rows[0].z_spec.is_none());
+        assert!(rows[0].survey.is_none());
+        assert!(rows[0].sersic.is_none());
+    }
+
+    // The same reader still has to handle DR10, which does have flux_i and shifts by 20.
+    #[test]
+    fn legacy_survey_reads_dr10_with_flux_i() {
+        let rows = LegacySurvey::from_dataframe(&legacy_survey_frame(10000, true)).unwrap();
+
+        assert_eq!(rows[0].flux_i, Some(6.5));
+        assert_eq!(rows[0].id, 12 + (521251i64 << 20) + (10000i64 << 40));
+    }
+
+    // DR9 ids must never collide with DR10 ids, which is what lets the two releases live in
+    // one collection: the release number is the high bits of every id.
+    #[test]
+    fn legacy_survey_dr9_and_dr10_ids_are_disjoint() {
+        let dr9 = LegacySurvey::from_dataframe(&legacy_survey_frame(9011, false)).unwrap();
+        let dr10 = LegacySurvey::from_dataframe(&legacy_survey_frame(10000, true)).unwrap();
+
+        assert_ne!(dr9[0].id, dr10[0].id);
     }
 }
