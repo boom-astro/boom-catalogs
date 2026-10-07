@@ -806,6 +806,26 @@ impl HasCoordinates for AllWISE {
     }
 }
 
+/// Read a column value the catalog always provides.
+///
+/// Every sweep-derived column is non-null by construction: FITS binary tables have no null
+/// representation, so "not measured" is encoded as a value (0, or -99 for the photo-z joins).
+/// A null in one of these therefore means the input is not the file we think it is, which is
+/// worth failing on rather than writing an absent field.
+fn required_f32(series: &polars::prelude::Column, name: &str, row: usize) -> Result<f32> {
+    series
+        .f32()?
+        .get(row)
+        .ok_or_else(|| anyhow::anyhow!("Missing {} at row {}", name, row))
+}
+
+fn required_i16(series: &polars::prelude::Column, name: &str, row: usize) -> Result<i16> {
+    series
+        .i16()?
+        .get(row)
+        .ok_or_else(|| anyhow::anyhow!("Missing {} at row {}", name, row))
+}
+
 /// Legacy Survey `_id`: objid + (brickid << N) + (release << 40).
 ///
 /// N is 20 from DR10 on (release >= 10000) and 16 before it. The release number occupies the
@@ -833,7 +853,7 @@ pub struct LSDR9 {
     pub dec: f64,
     #[serde(rename(deserialize = "type"))]
     pub objtype: String,
-    pub ebv: Option<f32>,
+    pub ebv: f32,
     pub z_spec: Option<f32>,
     pub survey: Option<String>,
     pub z_phot_mean: Option<f32>,
@@ -842,40 +862,40 @@ pub struct LSDR9 {
     pub z_phot_l95: Option<f32>,
     pub z_phot_u95: Option<f32>,
     /// No `flux_i`: DR9 predates the i-band entirely.
-    pub flux_g: Option<f32>,
-    pub flux_r: Option<f32>,
-    pub flux_z: Option<f32>,
-    pub flux_w1: Option<f32>,
-    pub flux_w2: Option<f32>,
-    pub flux_w3: Option<f32>,
-    pub flux_w4: Option<f32>,
+    pub flux_g: f32,
+    pub flux_r: f32,
+    pub flux_z: f32,
+    pub flux_w1: f32,
+    pub flux_w2: f32,
+    pub flux_w3: f32,
+    pub flux_w4: f32,
     /// Tractor ellipse: half-light radius in arcsec and the two ellipticity
     /// components. `shape_r` is 0 for point sources, which have no extent.
-    pub shape_r: Option<f32>,
-    pub shape_e1: Option<f32>,
-    pub shape_e2: Option<f32>,
+    pub shape_r: f32,
+    pub shape_e1: f32,
+    pub shape_e2: f32,
     /// Sersic index, fit only for SER objects. Converting the half-light radius
     /// to a 25 mag/arcsec^2 isophotal diameter needs it; REX and EXP are n = 1
     /// and DEV is n = 4 by definition, so a null here is not a missing value for
     /// those types.
-    pub sersic: Option<f32>,
+    pub sersic: f32,
     /// Per-band inverse variances. `flux_r * sqrt(flux_ivar_r)` is the r-band
     /// signal-to-noise that separates a marginal REX detection from a real
     /// galaxy; g and z give the same cut a fallback when r is missing.
-    pub flux_ivar_g: Option<f32>,
-    pub flux_ivar_r: Option<f32>,
-    pub flux_ivar_z: Option<f32>,
+    pub flux_ivar_g: f32,
+    pub flux_ivar_r: f32,
+    pub flux_ivar_z: f32,
     /// Fraction of the flux in this object's aperture contributed by neighbours.
     /// High values mark blended sources inside a larger galaxy, which are
     /// shredded fragments rather than hosts.
-    pub fracflux_g: Option<f32>,
-    pub fracflux_r: Option<f32>,
-    pub fracflux_z: Option<f32>,
+    pub fracflux_g: f32,
+    pub fracflux_r: f32,
+    pub fracflux_z: f32,
     /// Exposures per band. A zero distinguishes "not observed in this band" from
     /// "observed and not detected", which otherwise both read as a missing flux.
-    pub nobs_g: Option<i16>,
-    pub nobs_r: Option<i16>,
-    pub nobs_z: Option<i16>,
+    pub nobs_g: i16,
+    pub nobs_r: i16,
+    pub nobs_z: i16,
 }
 
 impl ParquetRowBatch for LSDR9 {
@@ -950,7 +970,7 @@ impl ParquetRowBatch for LSDR9 {
                 ra,
                 dec,
                 objtype,
-                ebv: ebv_series.f32()?.get(i),
+                ebv: required_f32(ebv_series, "ebv", i)?,
                 z_spec: z_spec_series.f32()?.get(i),
                 survey: survey_series.str()?.get(i).map(|v| v.to_string()),
                 z_phot_mean: z_phot_mean_series.f32()?.get(i),
@@ -958,26 +978,26 @@ impl ParquetRowBatch for LSDR9 {
                 z_phot_std: z_phot_std_series.f32()?.get(i),
                 z_phot_l95: z_phot_l95_series.f32()?.get(i),
                 z_phot_u95: z_phot_u95_series.f32()?.get(i),
-                flux_g: flux_g_series.f32()?.get(i),
-                flux_r: flux_r_series.f32()?.get(i),
-                flux_z: flux_z_series.f32()?.get(i),
-                flux_w1: flux_w1_series.f32()?.get(i),
-                flux_w2: flux_w2_series.f32()?.get(i),
-                flux_w3: flux_w3_series.f32()?.get(i),
-                flux_w4: flux_w4_series.f32()?.get(i),
-                shape_r: shape_r_series.f32()?.get(i),
-                shape_e1: shape_e1_series.f32()?.get(i),
-                shape_e2: shape_e2_series.f32()?.get(i),
-                sersic: sersic_series.f32()?.get(i),
-                flux_ivar_g: flux_ivar_g_series.f32()?.get(i),
-                flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
-                flux_ivar_z: flux_ivar_z_series.f32()?.get(i),
-                fracflux_g: fracflux_g_series.f32()?.get(i),
-                fracflux_r: fracflux_r_series.f32()?.get(i),
-                fracflux_z: fracflux_z_series.f32()?.get(i),
-                nobs_g: nobs_g_series.i16()?.get(i),
-                nobs_r: nobs_r_series.i16()?.get(i),
-                nobs_z: nobs_z_series.i16()?.get(i),
+                flux_g: required_f32(flux_g_series, "flux_g", i)?,
+                flux_r: required_f32(flux_r_series, "flux_r", i)?,
+                flux_z: required_f32(flux_z_series, "flux_z", i)?,
+                flux_w1: required_f32(flux_w1_series, "flux_w1", i)?,
+                flux_w2: required_f32(flux_w2_series, "flux_w2", i)?,
+                flux_w3: required_f32(flux_w3_series, "flux_w3", i)?,
+                flux_w4: required_f32(flux_w4_series, "flux_w4", i)?,
+                shape_r: required_f32(shape_r_series, "shape_r", i)?,
+                shape_e1: required_f32(shape_e1_series, "shape_e1", i)?,
+                shape_e2: required_f32(shape_e2_series, "shape_e2", i)?,
+                sersic: required_f32(sersic_series, "sersic", i)?,
+                flux_ivar_g: required_f32(flux_ivar_g_series, "flux_ivar_g", i)?,
+                flux_ivar_r: required_f32(flux_ivar_r_series, "flux_ivar_r", i)?,
+                flux_ivar_z: required_f32(flux_ivar_z_series, "flux_ivar_z", i)?,
+                fracflux_g: required_f32(fracflux_g_series, "fracflux_g", i)?,
+                fracflux_r: required_f32(fracflux_r_series, "fracflux_r", i)?,
+                fracflux_z: required_f32(fracflux_z_series, "fracflux_z", i)?,
+                nobs_g: required_i16(nobs_g_series, "nobs_g", i)?,
+                nobs_r: required_i16(nobs_r_series, "nobs_r", i)?,
+                nobs_z: required_i16(nobs_z_series, "nobs_z", i)?,
             });
         }
         Ok(results)
@@ -1003,7 +1023,7 @@ pub struct LSDR10 {
     pub dec: f64,
     #[serde(rename(deserialize = "type"))]
     pub objtype: String,
-    pub ebv: Option<f32>,
+    pub ebv: f32,
     pub z_spec: Option<f32>,
     pub survey: Option<String>,
     pub z_phot_mean: Option<f32>,
@@ -1011,38 +1031,38 @@ pub struct LSDR10 {
     pub z_phot_std: Option<f32>,
     pub z_phot_l95: Option<f32>,
     pub z_phot_u95: Option<f32>,
-    pub flux_g: Option<f32>,
-    pub flux_r: Option<f32>,
-    pub flux_i: Option<f32>,
-    pub flux_z: Option<f32>,
-    pub flux_w1: Option<f32>,
-    pub flux_w2: Option<f32>,
-    pub flux_w3: Option<f32>,
-    pub flux_w4: Option<f32>,
+    pub flux_g: f32,
+    pub flux_r: f32,
+    pub flux_i: f32,
+    pub flux_z: f32,
+    pub flux_w1: f32,
+    pub flux_w2: f32,
+    pub flux_w3: f32,
+    pub flux_w4: f32,
     /// Tractor ellipse: half-light radius in arcsec and the two ellipticity
     /// components. `shape_r` is 0 for point sources, which have no extent.
-    pub shape_r: Option<f32>,
-    pub shape_e1: Option<f32>,
-    pub shape_e2: Option<f32>,
+    pub shape_r: f32,
+    pub shape_e1: f32,
+    pub shape_e2: f32,
     /// Sersic index, fit only for SER objects. Converting the half-light radius
     /// to a 25 mag/arcsec^2 isophotal diameter needs it; REX and EXP are n = 1
     /// and DEV is n = 4 by definition, so a null here is not a missing value for
     /// those types.
-    pub sersic: Option<f32>,
+    pub sersic: f32,
     /// Per-band inverse variances. `flux_r * sqrt(flux_ivar_r)` is the r-band
     /// signal-to-noise that separates a marginal REX detection from a real
     /// galaxy; the other bands give the same cut a fallback when r is missing.
-    pub flux_ivar_g: Option<f32>,
-    pub flux_ivar_r: Option<f32>,
-    pub flux_ivar_i: Option<f32>,
-    pub flux_ivar_z: Option<f32>,
+    pub flux_ivar_g: f32,
+    pub flux_ivar_r: f32,
+    pub flux_ivar_i: f32,
+    pub flux_ivar_z: f32,
     /// Fraction of the flux in this object's aperture contributed by neighbours.
     /// High values mark blended sources inside a larger galaxy, which are
     /// shredded fragments rather than hosts.
-    pub fracflux_g: Option<f32>,
-    pub fracflux_r: Option<f32>,
-    pub fracflux_i: Option<f32>,
-    pub fracflux_z: Option<f32>,
+    pub fracflux_g: f32,
+    pub fracflux_r: f32,
+    pub fracflux_i: f32,
+    pub fracflux_z: f32,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -1117,7 +1137,7 @@ impl ParquetRowBatch for LSDR10 {
                 ra,
                 dec,
                 objtype,
-                ebv: ebv_series.f32()?.get(i),
+                ebv: required_f32(ebv_series, "ebv", i)?,
                 z_spec: z_spec_series.f32()?.get(i),
                 survey: survey_series.str()?.get(i).map(|v| v.to_string()),
                 z_phot_mean: z_phot_mean_series.f32()?.get(i),
@@ -1125,26 +1145,26 @@ impl ParquetRowBatch for LSDR10 {
                 z_phot_std: z_phot_std_series.f32()?.get(i),
                 z_phot_l95: z_phot_l95_series.f32()?.get(i),
                 z_phot_u95: z_phot_u95_series.f32()?.get(i),
-                flux_g: flux_g_series.f32()?.get(i),
-                flux_r: flux_r_series.f32()?.get(i),
-                flux_i: flux_i_series.f32()?.get(i),
-                flux_z: flux_z_series.f32()?.get(i),
-                flux_w1: flux_w1_series.f32()?.get(i),
-                flux_w2: flux_w2_series.f32()?.get(i),
-                flux_w3: flux_w3_series.f32()?.get(i),
-                flux_w4: flux_w4_series.f32()?.get(i),
-                shape_r: shape_r_series.f32()?.get(i),
-                shape_e1: shape_e1_series.f32()?.get(i),
-                shape_e2: shape_e2_series.f32()?.get(i),
-                sersic: sersic_series.f32()?.get(i),
-                flux_ivar_g: flux_ivar_g_series.f32()?.get(i),
-                flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
-                flux_ivar_i: flux_ivar_i_series.f32()?.get(i),
-                flux_ivar_z: flux_ivar_z_series.f32()?.get(i),
-                fracflux_g: fracflux_g_series.f32()?.get(i),
-                fracflux_r: fracflux_r_series.f32()?.get(i),
-                fracflux_i: fracflux_i_series.f32()?.get(i),
-                fracflux_z: fracflux_z_series.f32()?.get(i),
+                flux_g: required_f32(flux_g_series, "flux_g", i)?,
+                flux_r: required_f32(flux_r_series, "flux_r", i)?,
+                flux_i: required_f32(flux_i_series, "flux_i", i)?,
+                flux_z: required_f32(flux_z_series, "flux_z", i)?,
+                flux_w1: required_f32(flux_w1_series, "flux_w1", i)?,
+                flux_w2: required_f32(flux_w2_series, "flux_w2", i)?,
+                flux_w3: required_f32(flux_w3_series, "flux_w3", i)?,
+                flux_w4: required_f32(flux_w4_series, "flux_w4", i)?,
+                shape_r: required_f32(shape_r_series, "shape_r", i)?,
+                shape_e1: required_f32(shape_e1_series, "shape_e1", i)?,
+                shape_e2: required_f32(shape_e2_series, "shape_e2", i)?,
+                sersic: required_f32(sersic_series, "sersic", i)?,
+                flux_ivar_g: required_f32(flux_ivar_g_series, "flux_ivar_g", i)?,
+                flux_ivar_r: required_f32(flux_ivar_r_series, "flux_ivar_r", i)?,
+                flux_ivar_i: required_f32(flux_ivar_i_series, "flux_ivar_i", i)?,
+                flux_ivar_z: required_f32(flux_ivar_z_series, "flux_ivar_z", i)?,
+                fracflux_g: required_f32(fracflux_g_series, "fracflux_g", i)?,
+                fracflux_r: required_f32(fracflux_r_series, "fracflux_r", i)?,
+                fracflux_i: required_f32(fracflux_i_series, "fracflux_i", i)?,
+                fracflux_z: required_f32(fracflux_z_series, "fracflux_z", i)?,
             });
         }
         Ok(results)
@@ -1856,12 +1876,12 @@ mod tests {
             "flux_z" => [3.5f32],
             "flux_w1" => [4.5f32],
             "flux_w2" => [5.5f32],
-            "flux_w3" => [None::<f32>],
-            "flux_w4" => [None::<f32>],
+            "flux_w3" => [6.5f32],
+            "flux_w4" => [7.5f32],
             "shape_r" => [1.2f32],
             "shape_e1" => [0.1f32],
             "shape_e2" => [-0.2f32],
-            "sersic" => [None::<f32>],
+            "sersic" => [1.0f32],
             "flux_ivar_g" => [3.0f32],
             "flux_ivar_r" => [9.0f32],
             "flux_ivar_z" => [4.0f32],
@@ -1911,12 +1931,11 @@ mod tests {
         // Nulls in the frame must stay absent rather than becoming a sentinel value.
         assert!(rows[0].z_spec.is_none());
         assert!(rows[0].survey.is_none());
-        assert!(rows[0].sersic.is_none());
-        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
-        assert_eq!(rows[0].fracflux_z, Some(0.03));
-        assert_eq!(rows[0].nobs_g, Some(3));
-        assert_eq!(rows[0].nobs_r, Some(4));
-        assert_eq!(rows[0].nobs_z, Some(5));
+        assert_eq!(rows[0].flux_ivar_g, 3.0);
+        assert_eq!(rows[0].fracflux_z, 0.03);
+        assert_eq!(rows[0].nobs_g, 3);
+        assert_eq!(rows[0].nobs_r, 4);
+        assert_eq!(rows[0].nobs_z, 5);
     }
 
     #[test]
@@ -1924,10 +1943,10 @@ mod tests {
         let rows = LSDR10::from_dataframe(&dr10_frame()).unwrap();
 
         assert_eq!(rows[0].id, 12 + (521251i64 << 20) + (10000i64 << 40));
-        assert_eq!(rows[0].flux_i, Some(6.5));
-        assert_eq!(rows[0].flux_ivar_i, Some(7.0));
-        assert_eq!(rows[0].fracflux_i, Some(0.04));
-        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
+        assert_eq!(rows[0].flux_i, 6.5);
+        assert_eq!(rows[0].flux_ivar_i, 7.0);
+        assert_eq!(rows[0].fracflux_i, 0.04);
+        assert_eq!(rows[0].flux_ivar_g, 3.0);
     }
 
     // The point of splitting the structs: a column a release is supposed to have must be a
@@ -1937,6 +1956,20 @@ mod tests {
     fn each_reader_rejects_the_other_release_schema() {
         assert!(LSDR10::from_dataframe(&dr9_frame()).is_err());
         assert!(LSDR9::from_dataframe(&dr10_frame()).is_err());
+    }
+
+    // A null in a column the survey always provides means the input is not what we think
+    // it is, so it has to fail rather than quietly produce an absent field.
+    #[test]
+    fn null_in_a_required_column_is_an_error() {
+        use polars::prelude::*;
+
+        let mut df = dr9_frame();
+        df.with_column(Series::new("shape_r".into(), [None::<f32>]))
+            .unwrap();
+
+        let err = LSDR9::from_dataframe(&df).unwrap_err().to_string();
+        assert!(err.contains("shape_r"), "unexpected error: {err}");
     }
 
     // DR9 ids must never collide with DR10 ids: the release number is the high bits of
