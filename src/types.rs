@@ -806,18 +806,197 @@ impl HasCoordinates for AllWISE {
     }
 }
 
-/// A Legacy Survey source, shared by DR9 and DR10.
+/// Legacy Survey `_id`: objid + (brickid << N) + (release << 40).
 ///
-/// The two releases have the same schema apart from `flux_i`, which DR10 added
-/// and DR9 has no column for at all, so one type serves both and
-/// `ParquetCatalogs` has a variant each. Their `_id`s cannot collide: the
-/// release number is part of the id and DR9 uses 9010/9011/ 9012 against DR10's
-/// 10000/10002, so the two can share a collection or sit in their own.
+/// N is 20 from DR10 on (release >= 10000) and 16 before it. The release number occupies the
+/// high bits, which is what keeps DR9 and DR10 ids disjoint even though the two releases
+/// reuse the same brickid/objid pairs for different sources. Shared by both readers so the
+/// shift rule cannot drift between them.
+fn legacy_survey_id(release: i32, brickid: i32, objid: i32) -> i64 {
+    let shift: u64 = if release >= 10000 { 20 } else { 16 };
+    ((objid as u64) + ((brickid as u64) << shift) + ((release as u64) << 40)) as i64
+}
+
+/// A Legacy Survey DR9 source, as written by `minifiers/ls-dr9-minify.py`.
+///
+/// DR9 and DR10 get a struct each rather than one shared type. Their schemas differ in both
+/// directions (DR9 has no i-band, DR10 carries no NOBS), and a single type would have to read
+/// every differing column optionally, which would turn a renamed or missing column into a
+/// silent field of nulls instead of an error. Here every column this release has is required,
+/// and `Option` means only that the survey did not measure that source in that band.
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
-pub struct LegacySurvey {
-    /// Legacy Survey unique id: objid + (brickid << N) + (release << 40),
-    /// N = 20 for DR10+ (release >= 10000), else 16. Matches `LsDr10photoz::lsid`.
+pub struct LSDR9 {
+    #[serde(rename(serialize = "_id"))]
+    pub id: i64,
+    pub ra: f64,
+    pub dec: f64,
+    #[serde(rename(deserialize = "type"))]
+    pub objtype: String,
+    pub ebv: Option<f32>,
+    pub z_spec: Option<f32>,
+    pub survey: Option<String>,
+    pub z_phot_mean: Option<f32>,
+    pub z_phot_median: Option<f32>,
+    pub z_phot_std: Option<f32>,
+    pub z_phot_l95: Option<f32>,
+    pub z_phot_u95: Option<f32>,
+    /// No `flux_i`: DR9 predates the i-band entirely.
+    pub flux_g: Option<f32>,
+    pub flux_r: Option<f32>,
+    pub flux_z: Option<f32>,
+    pub flux_w1: Option<f32>,
+    pub flux_w2: Option<f32>,
+    pub flux_w3: Option<f32>,
+    pub flux_w4: Option<f32>,
+    /// Tractor ellipse: half-light radius in arcsec and the two ellipticity
+    /// components. `shape_r` is 0 for point sources, which have no extent.
+    pub shape_r: Option<f32>,
+    pub shape_e1: Option<f32>,
+    pub shape_e2: Option<f32>,
+    /// Sersic index, fit only for SER objects. Converting the half-light radius
+    /// to a 25 mag/arcsec^2 isophotal diameter needs it; REX and EXP are n = 1
+    /// and DEV is n = 4 by definition, so a null here is not a missing value for
+    /// those types.
+    pub sersic: Option<f32>,
+    /// Per-band inverse variances. `flux_r * sqrt(flux_ivar_r)` is the r-band
+    /// signal-to-noise that separates a marginal REX detection from a real
+    /// galaxy; g and z give the same cut a fallback when r is missing.
+    pub flux_ivar_g: Option<f32>,
+    pub flux_ivar_r: Option<f32>,
+    pub flux_ivar_z: Option<f32>,
+    /// Fraction of the flux in this object's aperture contributed by neighbours.
+    /// High values mark blended sources inside a larger galaxy, which are
+    /// shredded fragments rather than hosts.
+    pub fracflux_g: Option<f32>,
+    pub fracflux_r: Option<f32>,
+    pub fracflux_z: Option<f32>,
+    /// Exposures per band. A zero distinguishes "not observed in this band" from
+    /// "observed and not detected", which otherwise both read as a missing flux.
+    pub nobs_g: Option<i16>,
+    pub nobs_r: Option<i16>,
+    pub nobs_z: Option<i16>,
+}
+
+impl ParquetRowBatch for LSDR9 {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR9>> {
+        // RELEASE + BRICKID + OBJID form the unique key; OBJID alone repeats across bricks.
+        let release_series = df.column("release")?;
+        let brickid_series = df.column("brickid")?;
+        let objid_series = df.column("objid")?;
+        let ra_series = df.column("ra")?;
+        let dec_series = df.column("dec")?;
+        let type_series = df.column("type")?;
+        let ebv_series = df.column("ebv")?;
+        let z_spec_series = df.column("z_spec")?;
+        let survey_series = df.column("survey")?;
+        let z_phot_mean_series = df.column("z_phot_mean")?;
+        let z_phot_median_series = df.column("z_phot_median")?;
+        let z_phot_std_series = df.column("z_phot_std")?;
+        let z_phot_l95_series = df.column("z_phot_l95")?;
+        let z_phot_u95_series = df.column("z_phot_u95")?;
+        let flux_g_series = df.column("flux_g")?;
+        let flux_r_series = df.column("flux_r")?;
+        let flux_z_series = df.column("flux_z")?;
+        let flux_w1_series = df.column("flux_w1")?;
+        let flux_w2_series = df.column("flux_w2")?;
+        let flux_w3_series = df.column("flux_w3")?;
+        let flux_w4_series = df.column("flux_w4")?;
+        let shape_r_series = df.column("shape_r")?;
+        let shape_e1_series = df.column("shape_e1")?;
+        let shape_e2_series = df.column("shape_e2")?;
+        let sersic_series = df.column("sersic")?;
+        let flux_ivar_g_series = df.column("flux_ivar_g")?;
+        let flux_ivar_r_series = df.column("flux_ivar_r")?;
+        let flux_ivar_z_series = df.column("flux_ivar_z")?;
+        let fracflux_g_series = df.column("fracflux_g")?;
+        let fracflux_r_series = df.column("fracflux_r")?;
+        let fracflux_z_series = df.column("fracflux_z")?;
+        let nobs_g_series = df.column("nobs_g")?;
+        let nobs_r_series = df.column("nobs_r")?;
+        let nobs_z_series = df.column("nobs_z")?;
+
+        let mut results = Vec::with_capacity(df.height());
+        for i in 0..df.height() {
+            let release = release_series
+                .i16()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing release at row {}", i))?
+                as i32;
+            let brickid = brickid_series
+                .i32()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing brickid at row {}", i))?;
+            let objid = objid_series
+                .i32()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
+            let ra = ra_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing ra at row {}", i))?;
+            let dec = dec_series
+                .f64()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing dec at row {}", i))?;
+            let objtype = type_series
+                .str()?
+                .get(i)
+                .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
+                .to_string();
+
+            results.push(LSDR9 {
+                id: legacy_survey_id(release, brickid, objid),
+                ra,
+                dec,
+                objtype,
+                ebv: ebv_series.f32()?.get(i),
+                z_spec: z_spec_series.f32()?.get(i),
+                survey: survey_series.str()?.get(i).map(|v| v.to_string()),
+                z_phot_mean: z_phot_mean_series.f32()?.get(i),
+                z_phot_median: z_phot_median_series.f32()?.get(i),
+                z_phot_std: z_phot_std_series.f32()?.get(i),
+                z_phot_l95: z_phot_l95_series.f32()?.get(i),
+                z_phot_u95: z_phot_u95_series.f32()?.get(i),
+                flux_g: flux_g_series.f32()?.get(i),
+                flux_r: flux_r_series.f32()?.get(i),
+                flux_z: flux_z_series.f32()?.get(i),
+                flux_w1: flux_w1_series.f32()?.get(i),
+                flux_w2: flux_w2_series.f32()?.get(i),
+                flux_w3: flux_w3_series.f32()?.get(i),
+                flux_w4: flux_w4_series.f32()?.get(i),
+                shape_r: shape_r_series.f32()?.get(i),
+                shape_e1: shape_e1_series.f32()?.get(i),
+                shape_e2: shape_e2_series.f32()?.get(i),
+                sersic: sersic_series.f32()?.get(i),
+                flux_ivar_g: flux_ivar_g_series.f32()?.get(i),
+                flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
+                flux_ivar_z: flux_ivar_z_series.f32()?.get(i),
+                fracflux_g: fracflux_g_series.f32()?.get(i),
+                fracflux_r: fracflux_r_series.f32()?.get(i),
+                fracflux_z: fracflux_z_series.f32()?.get(i),
+                nobs_g: nobs_g_series.i16()?.get(i),
+                nobs_r: nobs_r_series.i16()?.get(i),
+                nobs_z: nobs_z_series.i16()?.get(i),
+            });
+        }
+        Ok(results)
+    }
+}
+
+impl HasCoordinates for LSDR9 {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
+/// A Legacy Survey DR10 source, as downloaded by `downloaders/download_lsdr10.py`.
+///
+/// Same shape as [`LSDR9`] but with the i-band columns DR10 added and without NOBS, which the
+/// DR10 download does not fetch. See [`LSDR9`] for why these are two types rather than one.
+#[skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct LSDR10 {
     #[serde(rename(serialize = "_id"))]
     pub id: i64,
     pub ra: f64,
@@ -850,34 +1029,24 @@ pub struct LegacySurvey {
     /// and DEV is n = 4 by definition, so a null here is not a missing value for
     /// those types.
     pub sersic: Option<f32>,
-    /// Inverse variance on `flux_r`, giving the r-band signal-to-noise as
-    /// `flux_r * sqrt(flux_ivar_r)`. Separates a marginal REX detection from a
-    /// real galaxy.
-    pub flux_ivar_r: Option<f32>,
-    /// Fraction of the r-band flux in this object's aperture contributed by
-    /// neighbours. High values mark blended sources inside a larger galaxy,
-    /// which are shredded fragments rather than hosts.
-    pub fracflux_r: Option<f32>,
-    /// Per-band inverse variances, giving a signal-to-noise fallback for sources
-    /// with no usable r-band measurement. `flux_ivar_i` is DR10-only.
+    /// Per-band inverse variances. `flux_r * sqrt(flux_ivar_r)` is the r-band
+    /// signal-to-noise that separates a marginal REX detection from a real
+    /// galaxy; the other bands give the same cut a fallback when r is missing.
     pub flux_ivar_g: Option<f32>,
+    pub flux_ivar_r: Option<f32>,
     pub flux_ivar_i: Option<f32>,
     pub flux_ivar_z: Option<f32>,
-    /// Neighbour contamination per band, so the blending cut is not limited to
-    /// sources detected in r. `fracflux_i` is DR10-only.
+    /// Fraction of the flux in this object's aperture contributed by neighbours.
+    /// High values mark blended sources inside a larger galaxy, which are
+    /// shredded fragments rather than hosts.
     pub fracflux_g: Option<f32>,
+    pub fracflux_r: Option<f32>,
     pub fracflux_i: Option<f32>,
     pub fracflux_z: Option<f32>,
-    /// Exposures contributing to each band. A zero here distinguishes "not
-    /// observed in this band" from "observed and not detected", which otherwise
-    /// both read as a missing flux.
-    pub nobs_g: Option<i16>,
-    pub nobs_r: Option<i16>,
-    pub nobs_z: Option<i16>,
 }
 
-impl ParquetRowBatch for LegacySurvey {
-    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LegacySurvey>> {
+impl ParquetRowBatch for LSDR10 {
+    fn from_dataframe(df: &polars::prelude::DataFrame) -> Result<Vec<LSDR10>> {
         // RELEASE + BRICKID + OBJID form the unique key; OBJID alone repeats across bricks.
         let release_series = df.column("release")?;
         let brickid_series = df.column("brickid")?;
@@ -895,7 +1064,7 @@ impl ParquetRowBatch for LegacySurvey {
         let z_phot_u95_series = df.column("z_phot_u95")?;
         let flux_g_series = df.column("flux_g")?;
         let flux_r_series = df.column("flux_r")?;
-        let flux_i_series = df.column("flux_i").ok();
+        let flux_i_series = df.column("flux_i")?;
         let flux_z_series = df.column("flux_z")?;
         let flux_w1_series = df.column("flux_w1")?;
         let flux_w2_series = df.column("flux_w2")?;
@@ -905,19 +1074,14 @@ impl ParquetRowBatch for LegacySurvey {
         let shape_e1_series = df.column("shape_e1")?;
         let shape_e2_series = df.column("shape_e2")?;
         let sersic_series = df.column("sersic")?;
+        let flux_ivar_g_series = df.column("flux_ivar_g")?;
         let flux_ivar_r_series = df.column("flux_ivar_r")?;
+        let flux_ivar_i_series = df.column("flux_ivar_i")?;
+        let flux_ivar_z_series = df.column("flux_ivar_z")?;
+        let fracflux_g_series = df.column("fracflux_g")?;
         let fracflux_r_series = df.column("fracflux_r")?;
-        // Both ingests provide the g/z columns and only DR10 provides the i ones, but a
-        // collection written before these were added has none of them, so all are optional.
-        let flux_ivar_g_series = df.column("flux_ivar_g").ok();
-        let flux_ivar_i_series = df.column("flux_ivar_i").ok();
-        let fracflux_i_series = df.column("fracflux_i").ok();
-        let flux_ivar_z_series = df.column("flux_ivar_z").ok();
-        let fracflux_g_series = df.column("fracflux_g").ok();
-        let fracflux_z_series = df.column("fracflux_z").ok();
-        let nobs_g_series = df.column("nobs_g").ok();
-        let nobs_r_series = df.column("nobs_r").ok();
-        let nobs_z_series = df.column("nobs_z").ok();
+        let fracflux_i_series = df.column("fracflux_i")?;
+        let fracflux_z_series = df.column("fracflux_z")?;
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -934,11 +1098,6 @@ impl ParquetRowBatch for LegacySurvey {
                 .i32()?
                 .get(i)
                 .ok_or_else(|| anyhow::anyhow!("Missing objid at row {}", i))?;
-            // Same lsid formula as the LS minifiers, so this collection joins
-            // directly against LS_DR10_PHOTOZ on _id.
-            let shift: u64 = if release >= 10000 { 20 } else { 16 };
-            let id =
-                ((objid as u64) + ((brickid as u64) << shift) + ((release as u64) << 40)) as i64;
             let ra = ra_series
                 .f64()?
                 .get(i)
@@ -953,8 +1112,8 @@ impl ParquetRowBatch for LegacySurvey {
                 .ok_or_else(|| anyhow::anyhow!("Missing type at row {}", i))?
                 .to_string();
 
-            results.push(LegacySurvey {
-                id,
+            results.push(LSDR10 {
+                id: legacy_survey_id(release, brickid, objid),
                 ra,
                 dec,
                 objtype,
@@ -968,10 +1127,7 @@ impl ParquetRowBatch for LegacySurvey {
                 z_phot_u95: z_phot_u95_series.f32()?.get(i),
                 flux_g: flux_g_series.f32()?.get(i),
                 flux_r: flux_r_series.f32()?.get(i),
-                flux_i: flux_i_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
+                flux_i: flux_i_series.f32()?.get(i),
                 flux_z: flux_z_series.f32()?.get(i),
                 flux_w1: flux_w1_series.f32()?.get(i),
                 flux_w2: flux_w2_series.f32()?.get(i),
@@ -981,51 +1137,21 @@ impl ParquetRowBatch for LegacySurvey {
                 shape_e1: shape_e1_series.f32()?.get(i),
                 shape_e2: shape_e2_series.f32()?.get(i),
                 sersic: sersic_series.f32()?.get(i),
+                flux_ivar_g: flux_ivar_g_series.f32()?.get(i),
                 flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
+                flux_ivar_i: flux_ivar_i_series.f32()?.get(i),
+                flux_ivar_z: flux_ivar_z_series.f32()?.get(i),
+                fracflux_g: fracflux_g_series.f32()?.get(i),
                 fracflux_r: fracflux_r_series.f32()?.get(i),
-                flux_ivar_g: flux_ivar_g_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                flux_ivar_i: flux_ivar_i_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                fracflux_i: fracflux_i_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                flux_ivar_z: flux_ivar_z_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                fracflux_g: fracflux_g_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                fracflux_z: fracflux_z_series
-                    .map(|s| s.f32())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                nobs_g: nobs_g_series
-                    .map(|s| s.i16())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                nobs_r: nobs_r_series
-                    .map(|s| s.i16())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
-                nobs_z: nobs_z_series
-                    .map(|s| s.i16())
-                    .transpose()?
-                    .and_then(|s| s.get(i)),
+                fracflux_i: fracflux_i_series.f32()?.get(i),
+                fracflux_z: fracflux_z_series.f32()?.get(i),
             });
         }
         Ok(results)
     }
 }
 
-impl HasCoordinates for LegacySurvey {
+impl HasCoordinates for LSDR10 {
     fn has_coordinates() -> bool {
         true
     }
@@ -1699,9 +1825,15 @@ mod tests {
         assert!(value.get("Mstar").unwrap().is_null());
     }
 
-    /// Build a frame shaped like one minified Legacy Survey row. `flux_i` is
-    /// appended only when `with_flux_i`, since DR9 has no i-band column at all.
-    fn legacy_survey_frame(release: i16, with_flux_i: bool) -> polars::prelude::DataFrame {
+    /// Build a frame shaped like one minified Legacy Survey row, with the column set the
+    /// given release actually has. Round-tripped through parquet rather than handed over
+    /// in memory, because the ingest only ever sees frames that came off disk and that is
+    /// where string columns become large_string.
+    fn legacy_survey_frame(
+        release: i16,
+        columns: &[(&str, f32)],
+        nobs: bool,
+    ) -> polars::prelude::DataFrame {
         use polars::prelude::*;
 
         let mut df = df![
@@ -1730,30 +1862,20 @@ mod tests {
             "shape_e1" => [0.1f32],
             "shape_e2" => [-0.2f32],
             "sersic" => [None::<f32>],
+            "flux_ivar_g" => [3.0f32],
             "flux_ivar_r" => [9.0f32],
+            "flux_ivar_z" => [4.0f32],
+            "fracflux_g" => [0.02f32],
             "fracflux_r" => [0.01f32],
+            "fracflux_z" => [0.03f32],
         ]
         .unwrap();
 
-        // Both ingests write the g/z quality columns. Only DR10 has i-band, and only the
-        // DR9 minifier writes NOBS, so each release is missing something the other has.
-        for (name, value) in [
-            ("flux_ivar_g", 3.0f32),
-            ("flux_ivar_z", 4.0),
-            ("fracflux_g", 0.02),
-            ("fracflux_z", 0.03),
-        ] {
-            df.with_column(Series::new(name.into(), [value])).unwrap();
+        for (name, value) in columns {
+            df.with_column(Series::new((*name).into(), [*value]))
+                .unwrap();
         }
-        if with_flux_i {
-            for (name, value) in [
-                ("flux_i", 6.5f32),
-                ("flux_ivar_i", 7.0),
-                ("fracflux_i", 0.04),
-            ] {
-                df.with_column(Series::new(name.into(), [value])).unwrap();
-            }
-        } else {
+        if nobs {
             for (name, value) in [("nobs_g", 3i16), ("nobs_r", 4), ("nobs_z", 5)] {
                 df.with_column(Series::new(name.into(), [value])).unwrap();
             }
@@ -1765,52 +1887,64 @@ mod tests {
         ParquetReader::new(buffer).finish().unwrap()
     }
 
-    // DR9 sweeps carry no i-band column, so reading one must yield flux_i = None rather than
-    // failing on the missing column. The id also has to use the pre-DR10 16-bit brickid shift.
+    fn dr9_frame() -> polars::prelude::DataFrame {
+        legacy_survey_frame(9011, &[], true)
+    }
+
+    fn dr10_frame() -> polars::prelude::DataFrame {
+        legacy_survey_frame(
+            10000,
+            &[("flux_i", 6.5), ("flux_ivar_i", 7.0), ("fracflux_i", 0.04)],
+            false,
+        )
+    }
+
+    // DR9 has no i-band, so its struct has no such fields at all, and the id uses the
+    // pre-DR10 16-bit brickid shift.
     #[test]
-    fn legacy_survey_reads_dr9_without_flux_i() {
-        let rows = LegacySurvey::from_dataframe(&legacy_survey_frame(9011, false)).unwrap();
+    fn lsdr9_reads_its_own_schema() {
+        let rows = LSDR9::from_dataframe(&dr9_frame()).unwrap();
 
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].flux_i.is_none());
         assert_eq!(rows[0].objtype, "REX");
         assert_eq!(rows[0].id, 12 + (521251i64 << 16) + (9011i64 << 40));
+        // Nulls in the frame must stay absent rather than becoming a sentinel value.
         assert!(rows[0].z_spec.is_none());
         assert!(rows[0].survey.is_none());
         assert!(rows[0].sersic.is_none());
-        // The g/z quality columns the DR9 minifier adds must survive the round trip.
         assert_eq!(rows[0].flux_ivar_g, Some(3.0));
-        assert_eq!(rows[0].flux_ivar_z, Some(4.0));
-        assert_eq!(rows[0].fracflux_g, Some(0.02));
         assert_eq!(rows[0].fracflux_z, Some(0.03));
         assert_eq!(rows[0].nobs_g, Some(3));
         assert_eq!(rows[0].nobs_r, Some(4));
         assert_eq!(rows[0].nobs_z, Some(5));
-        // DR9 has no i-band at all, so its quality columns stay absent.
-        assert!(rows[0].flux_ivar_i.is_none());
-        assert!(rows[0].fracflux_i.is_none());
     }
 
-    // The same reader still has to handle DR10, which does have flux_i and shifts by 20.
     #[test]
-    fn legacy_survey_reads_dr10_with_flux_i() {
-        let rows = LegacySurvey::from_dataframe(&legacy_survey_frame(10000, true)).unwrap();
+    fn lsdr10_reads_its_own_schema() {
+        let rows = LSDR10::from_dataframe(&dr10_frame()).unwrap();
 
-        assert_eq!(rows[0].flux_i, Some(6.5));
         assert_eq!(rows[0].id, 12 + (521251i64 << 20) + (10000i64 << 40));
-        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
+        assert_eq!(rows[0].flux_i, Some(6.5));
         assert_eq!(rows[0].flux_ivar_i, Some(7.0));
         assert_eq!(rows[0].fracflux_i, Some(0.04));
-        // NOBS is written only by the DR9 minifier; absent must read as None, not error.
-        assert!(rows[0].nobs_r.is_none());
+        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
     }
 
-    // DR9 ids must never collide with DR10 ids, which is what lets the two releases live in
-    // one collection: the release number is the high bits of every id.
+    // The point of splitting the structs: a column a release is supposed to have must be a
+    // hard error, not a silently null field. Reading DR9 data with the DR10 reader fails on
+    // the missing i-band columns, and the reverse fails on NOBS.
     #[test]
-    fn legacy_survey_dr9_and_dr10_ids_are_disjoint() {
-        let dr9 = LegacySurvey::from_dataframe(&legacy_survey_frame(9011, false)).unwrap();
-        let dr10 = LegacySurvey::from_dataframe(&legacy_survey_frame(10000, true)).unwrap();
+    fn each_reader_rejects_the_other_release_schema() {
+        assert!(LSDR10::from_dataframe(&dr9_frame()).is_err());
+        assert!(LSDR9::from_dataframe(&dr10_frame()).is_err());
+    }
+
+    // DR9 ids must never collide with DR10 ids: the release number is the high bits of
+    // every id, which is what lets the two catalogs be compared without ambiguity.
+    #[test]
+    fn dr9_and_dr10_ids_are_disjoint() {
+        let dr9 = LSDR9::from_dataframe(&dr9_frame()).unwrap();
+        let dr10 = LSDR10::from_dataframe(&dr10_frame()).unwrap();
 
         assert_ne!(dr9[0].id, dr10[0].id);
     }
