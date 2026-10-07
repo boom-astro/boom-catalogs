@@ -858,6 +858,22 @@ pub struct LegacySurvey {
     /// neighbours. High values mark blended sources inside a larger galaxy,
     /// which are shredded fragments rather than hosts.
     pub fracflux_r: Option<f32>,
+    /// Per-band inverse variances, giving a signal-to-noise fallback for sources
+    /// with no usable r-band measurement. `flux_ivar_i` is DR10-only.
+    pub flux_ivar_g: Option<f32>,
+    pub flux_ivar_i: Option<f32>,
+    pub flux_ivar_z: Option<f32>,
+    /// Neighbour contamination per band, so the blending cut is not limited to
+    /// sources detected in r. `fracflux_i` is DR10-only.
+    pub fracflux_g: Option<f32>,
+    pub fracflux_i: Option<f32>,
+    pub fracflux_z: Option<f32>,
+    /// Exposures contributing to each band. A zero here distinguishes "not
+    /// observed in this band" from "observed and not detected", which otherwise
+    /// both read as a missing flux.
+    pub nobs_g: Option<i16>,
+    pub nobs_r: Option<i16>,
+    pub nobs_z: Option<i16>,
 }
 
 impl ParquetRowBatch for LegacySurvey {
@@ -891,6 +907,17 @@ impl ParquetRowBatch for LegacySurvey {
         let sersic_series = df.column("sersic")?;
         let flux_ivar_r_series = df.column("flux_ivar_r")?;
         let fracflux_r_series = df.column("fracflux_r")?;
+        // Both ingests provide the g/z columns and only DR10 provides the i ones, but a
+        // collection written before these were added has none of them, so all are optional.
+        let flux_ivar_g_series = df.column("flux_ivar_g").ok();
+        let flux_ivar_i_series = df.column("flux_ivar_i").ok();
+        let fracflux_i_series = df.column("fracflux_i").ok();
+        let flux_ivar_z_series = df.column("flux_ivar_z").ok();
+        let fracflux_g_series = df.column("fracflux_g").ok();
+        let fracflux_z_series = df.column("fracflux_z").ok();
+        let nobs_g_series = df.column("nobs_g").ok();
+        let nobs_r_series = df.column("nobs_r").ok();
+        let nobs_z_series = df.column("nobs_z").ok();
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -956,6 +983,42 @@ impl ParquetRowBatch for LegacySurvey {
                 sersic: sersic_series.f32()?.get(i),
                 flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
                 fracflux_r: fracflux_r_series.f32()?.get(i),
+                flux_ivar_g: flux_ivar_g_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                flux_ivar_i: flux_ivar_i_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                fracflux_i: fracflux_i_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                flux_ivar_z: flux_ivar_z_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                fracflux_g: fracflux_g_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                fracflux_z: fracflux_z_series
+                    .map(|s| s.f32())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                nobs_g: nobs_g_series
+                    .map(|s| s.i16())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                nobs_r: nobs_r_series
+                    .map(|s| s.i16())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
+                nobs_z: nobs_z_series
+                    .map(|s| s.i16())
+                    .transpose()?
+                    .and_then(|s| s.get(i)),
             });
         }
         Ok(results)
@@ -1672,9 +1735,28 @@ mod tests {
         ]
         .unwrap();
 
+        // Both ingests write the g/z quality columns. Only DR10 has i-band, and only the
+        // DR9 minifier writes NOBS, so each release is missing something the other has.
+        for (name, value) in [
+            ("flux_ivar_g", 3.0f32),
+            ("flux_ivar_z", 4.0),
+            ("fracflux_g", 0.02),
+            ("fracflux_z", 0.03),
+        ] {
+            df.with_column(Series::new(name.into(), [value])).unwrap();
+        }
         if with_flux_i {
-            df.with_column(Series::new("flux_i".into(), [6.5f32]))
-                .unwrap();
+            for (name, value) in [
+                ("flux_i", 6.5f32),
+                ("flux_ivar_i", 7.0),
+                ("fracflux_i", 0.04),
+            ] {
+                df.with_column(Series::new(name.into(), [value])).unwrap();
+            }
+        } else {
+            for (name, value) in [("nobs_g", 3i16), ("nobs_r", 4), ("nobs_z", 5)] {
+                df.with_column(Series::new(name.into(), [value])).unwrap();
+            }
         }
 
         let mut buffer = std::io::Cursor::new(Vec::new());
@@ -1696,6 +1778,17 @@ mod tests {
         assert!(rows[0].z_spec.is_none());
         assert!(rows[0].survey.is_none());
         assert!(rows[0].sersic.is_none());
+        // The g/z quality columns the DR9 minifier adds must survive the round trip.
+        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
+        assert_eq!(rows[0].flux_ivar_z, Some(4.0));
+        assert_eq!(rows[0].fracflux_g, Some(0.02));
+        assert_eq!(rows[0].fracflux_z, Some(0.03));
+        assert_eq!(rows[0].nobs_g, Some(3));
+        assert_eq!(rows[0].nobs_r, Some(4));
+        assert_eq!(rows[0].nobs_z, Some(5));
+        // DR9 has no i-band at all, so its quality columns stay absent.
+        assert!(rows[0].flux_ivar_i.is_none());
+        assert!(rows[0].fracflux_i.is_none());
     }
 
     // The same reader still has to handle DR10, which does have flux_i and shifts by 20.
@@ -1705,6 +1798,11 @@ mod tests {
 
         assert_eq!(rows[0].flux_i, Some(6.5));
         assert_eq!(rows[0].id, 12 + (521251i64 << 20) + (10000i64 << 40));
+        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
+        assert_eq!(rows[0].flux_ivar_i, Some(7.0));
+        assert_eq!(rows[0].fracflux_i, Some(0.04));
+        // NOBS is written only by the DR9 minifier; absent must read as None, not error.
+        assert!(rows[0].nobs_r.is_none());
     }
 
     // DR9 ids must never collide with DR10 ids, which is what lets the two releases live in

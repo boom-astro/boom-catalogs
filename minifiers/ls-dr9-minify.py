@@ -47,8 +47,14 @@ SWEEP_COLUMNS = [
 	# flux_i is DR10-only (DR9 has no i-band) and is deliberately absent.
 	'flux_g', 'flux_r', 'flux_z',
 	'flux_w1', 'flux_w2', 'flux_w3', 'flux_w4',
-	# Tractor ellipse + the two quality columns used to reject marginal REX hosts.
-	'shape_r', 'shape_e1', 'shape_e2', 'sersic', 'flux_ivar_r', 'fracflux_r',
+	# g/z inverse variances give a REX S/N fallback when r is missing.
+	'flux_ivar_g', 'flux_ivar_z',
+	# Tractor ellipse + the quality columns used to reject marginal REX hosts.
+	'shape_r', 'shape_e1', 'shape_e2', 'sersic', 'flux_ivar_r',
+	# Blending in all three bands, not just r.
+	'fracflux_g', 'fracflux_r', 'fracflux_z',
+	# Exposure counts per band, for diagnosing missing-band sources.
+	'nobs_g', 'nobs_r', 'nobs_z',
 ]
 
 # Columns taken from the photo-z sweep. release/brickid/objid are read only to verify the
