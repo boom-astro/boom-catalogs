@@ -16,11 +16,13 @@ import importlib.util
 import os
 import re
 import shutil
+import sys
+import threading
 import time
 
 import requests
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from tqdm import tqdm
 
@@ -41,6 +43,20 @@ _MINIFIER_PATH = os.path.join(
 _spec = importlib.util.spec_from_file_location("ls_dr9_minify", _MINIFIER_PATH)
 ls_dr9_minify = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ls_dr9_minify)
+
+# Set on Ctrl-C. Worker threads poll it so an in-flight download gives up inside a chunk
+# instead of running to completion: a sweep is most of a GB, and ThreadPoolExecutor's shutdown
+# waits for running tasks no matter what the main thread does.
+STOP = threading.Event()
+
+
+class Aborted(BaseException):
+    """Raised in a worker when the run is interrupted.
+
+    Deliberately not an `Exception`, so the `except Exception` that turns a real failure into a
+    logged error lets this pass through untouched. An aborted pair is not a failed pair.
+    """
+
 
 parser = argparse.ArgumentParser(
     description="Download and minify Legacy Survey DR9 sweep + photo-z catalogs."
@@ -127,10 +143,14 @@ def download_file(url, output_path, retries=5):
     tmp_path = output_path + ".part"
     for attempt in range(retries):
         try:
+            if STOP.is_set():
+                raise Aborted()
             with requests.get(url, stream=True, timeout=(30, 120)) as response:
                 response.raise_for_status()
                 with open(tmp_path, "wb") as handle:
                     for chunk in response.iter_content(chunk_size=1 << 20):
+                        if STOP.is_set():
+                            raise Aborted()
                         handle.write(chunk)
             # A sweep that stops early still looks like a valid FITS file to astropy for the
             # rows it does contain, so verify the length here rather than letting a short
@@ -141,12 +161,18 @@ def download_file(url, output_path, retries=5):
                 )
             os.replace(tmp_path, output_path)
             return
-        except Exception as e:
+        # BaseException rather than Exception so an abort also drops its partial file. A
+        # leftover .part is never mistaken for a complete download, but it still wastes disk.
+        except BaseException as e:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+            if isinstance(e, Aborted) or not isinstance(e, Exception):
+                raise
             if attempt == retries - 1:
                 raise RuntimeError(f"Failed to download {url} after {retries} attempts: {e}") from e
-            time.sleep(2 ** attempt)
+            # Interruptible backoff; time.sleep would keep a cancelled run alive for seconds.
+            if STOP.wait(2 ** attempt):
+                raise Aborted() from e
 
 
 def process_pair(task):
@@ -163,7 +189,7 @@ def process_pair(task):
         args.output_dir, "minified", region, name.replace(".fits", ".parquet")
     )
 
-    if os.path.exists(output_path):
+    if os.path.exists(output_path) or STOP.is_set():
         return (name, 0, None)
 
     try:
@@ -211,20 +237,50 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
     total_rows = 0
     failures = []
+    # Deliberately not `with ThreadPoolExecutor(...)`: its __exit__ calls shutdown(wait=True),
+    # which drains every queued task. Since map() submits all of them up front, Ctrl-C would
+    # otherwise keep downloading the whole catalog before exiting.
+    pool = ThreadPoolExecutor(max_workers=args.processes)
+    interrupted = False
+    done = 0
     with tqdm(total=len(tasks), desc="DR9 sweeps") as pbar:
-        with ThreadPoolExecutor(max_workers=args.processes) as pool:
-            for name, rows, error in pool.map(process_pair, tasks):
+        futures = [pool.submit(process_pair, task) for task in tasks]
+        try:
+            for future in as_completed(futures):
+                try:
+                    name, rows, error = future.result()
+                except Aborted:
+                    continue
                 if error is not None:
                     failures.append((name, error))
                     pbar.write(f"FAILED {name}: {error}")
                 total_rows += rows
+                done += 1
                 pbar.update()
+        except KeyboardInterrupt:
+            interrupted = True
+            STOP.set()
+            pbar.write("\nInterrupted: dropping queued pairs and stopping in-flight downloads.")
+        finally:
+            # Queued pairs are cancelled outright; the few already running see STOP inside
+            # their next chunk and unwind, so this returns in about a second rather than
+            # after the remaining hours of downloading.
+            pool.shutdown(wait=True, cancel_futures=True)
 
-    print(f"\nDone: {len(tasks) - len(failures)}/{len(tasks)} pairs, "
+    verb = "Stopped" if interrupted else "Done"
+    print(f"\n{verb}: {done}/{len(tasks)} pairs completed, "
           f"{len(failures)} failed, {total_rows:,} rows written.")
+    if interrupted:
+        print("Partial downloads were removed. Completed pairs are kept, so re-running "
+              "resumes from here.")
     if failures:
         fail_log = os.path.join(args.output_dir, "failed_pairs.txt")
         with open(fail_log, "w") as f:
             for name, error in failures:
                 f.write(f"{name}\t{error}\n")
         print(f"Failed pairs written to {fail_log}; re-run to retry them.")
+
+    if interrupted:
+        # 130 is the conventional "killed by SIGINT" status, so a wrapping shell script or
+        # Slurm job sees this as an interruption rather than a clean finish.
+        sys.exit(130)

@@ -21,6 +21,8 @@ reduction only where Dec > 32.375 AND the source is north of the Galactic plane.
 """
 import argparse
 import os
+import signal
+import sys
 
 import numpy as np
 import pandas as pd
@@ -85,6 +87,15 @@ parser.add_argument("--resolve", choices=["dr9", "dec-only", "none"], default="d
                          "(Dec > 32.375 and north of the Galactic plane). 'dec-only' drops the "
                          "Galactic half, which keeps the Dec > 32.375, b < 0 sources that no "
                          "other ingested catalog covers. 'none' keeps every row.")
+
+
+def _worker_ignores_sigint():
+	"""Let the parent own Ctrl-C.
+
+	Terminal SIGINT goes to the whole process group, so without this every worker raises its
+	own KeyboardInterrupt and the real traceback is buried under one per process.
+	"""
+	signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 def available_cpus():
@@ -237,20 +248,39 @@ if __name__ == "__main__":
 	total_rows = 0
 	failures = []
 	tasks = [(s, p, o, args.resolve) for s, p, o in pairs]
+	interrupted = False
+	done = 0
 	with tqdm(total=len(tasks), desc="Minifying DR9 sweeps") as pbar:
-		with Pool(processes=nb_processes) as pool:
+		pool = Pool(processes=nb_processes, initializer=_worker_ignores_sigint)
+		try:
 			for sweep_path, rows, error in pool.imap_unordered(_minify_pair_task, tasks):
 				if error is not None:
 					failures.append((sweep_path, error))
 					pbar.write(f"SKIPPED {sweep_path}: {error}")
 				total_rows += rows
+				done += 1
 				pbar.update()
+			pool.close()
+		except KeyboardInterrupt:
+			interrupted = True
+			pbar.write("\nInterrupted: stopping workers.")
+			# terminate rather than close: close() waits for every queued pair.
+			pool.terminate()
+		finally:
+			pool.join()
 
-	print(f"\nDone: {len(tasks) - len(failures)}/{len(tasks)} pairs minified, "
+	verb = "Stopped" if interrupted else "Done"
+	print(f"\n{verb}: {done}/{len(tasks)} pairs minified, "
 	      f"{len(failures)} failed, {total_rows:,} rows written.")
+	if interrupted:
+		print("Finished pairs are kept, so re-running resumes from here. A killed worker may "
+		      "leave a .part file, which is ignored and overwritten on the next run.")
 	if failures:
 		fail_log = os.path.join(args.output_dir, "failed_files.txt")
 		with open(fail_log, "w") as f:
 			for sweep_path, error in failures:
 				f.write(f"{sweep_path}\t{error}\n")
 		print(f"Failed files written to {fail_log}")
+
+	if interrupted:
+		sys.exit(130)
