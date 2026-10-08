@@ -46,11 +46,18 @@ LSDR10_COLUMNS = [
     "SHAPE_E1",
     "SHAPE_E2",
     # SERSIC is fit only for SER objects; it converts SHAPE_R to a 25 mag
-    # isophotal diameter. FLUX_IVAR_R and FRACFLUX_R give the r-band SNR and the
-    # neighbour contamination used to reject marginal and blended detections.
+    # isophotal diameter. FLUX_IVAR_* and FRACFLUX_* give the per-band SNR and the
+    # neighbour contamination used to reject marginal and blended detections; the
+    # g/i/z bands let both cuts fall back to another band when r is missing.
     "SERSIC",
+    "FLUX_IVAR_G",
     "FLUX_IVAR_R",
+    "FLUX_IVAR_I",
+    "FLUX_IVAR_Z",
+    "FRACFLUX_G",
     "FRACFLUX_R",
+    "FRACFLUX_I",
+    "FRACFLUX_Z",
 ]
 
 CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey"
