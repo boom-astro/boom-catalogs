@@ -16,8 +16,16 @@ North/south resolve
 -------------------
 DR9 reduces the same sky twice: dr9/north is BASS+MzLS, dr9/south is DECam, and the two
 footprints overlap. The survey's own rule for counting a source once is to take the northern
-reduction only where Dec > 32.375 AND the source is north of the Galactic plane. See
---resolve for why you might not want the Galactic half of that.
+reduction only where Dec > 32.375 AND the source is north of the Galactic plane, and the
+southern reduction everywhere else. North keeps the rows inside that area and south keeps the
+rows outside it, so ingesting both regions counts every source exactly once. See --resolve for
+why you might not want the Galactic half of that.
+
+Layout
+------
+The defaults match download_lsdr9.py, so `--no-minify` followed by this script needs no path
+arguments: FITS pairs are read from <input-dir>/<region>/sweep and <input-dir>/<region>/photo-z,
+and parquet is written to <output-dir>/<region>.
 """
 import argparse
 import os
@@ -33,8 +41,12 @@ from multiprocessing import Pool
 from tqdm import tqdm
 
 load_dotenv()
-INPUT_DIR = f"{os.getenv('INPUT_DIR','.')}/ls_dr9/"
-OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr9_minified/"
+# download_lsdr9.py writes everything under OUTPUT_DIR, so fall back to it when INPUT_DIR is
+# unset and the minifier finds the downloader's files without extra configuration.
+INPUT_DIR = f"{os.getenv('INPUT_DIR') or os.getenv('OUTPUT_DIR', '.')}/ls_dr9/"
+OUTPUT_DIR = f"{os.getenv('OUTPUT_DIR','.')}/ls_dr9/minified/"
+
+REGIONS = ["north", "south"]
 
 # The Dec at which the Legacy Surveys switch from the DECam (south) reduction to the
 # BASS+MzLS (north) one.
@@ -78,15 +90,22 @@ parser = argparse.ArgumentParser(
 	description="Minify Legacy Survey DR9 sweep + photo-z FITS pairs into parquet."
 )
 parser.add_argument("--input-dir", type=str, default=INPUT_DIR,
-                    help="Directory containing sweep/ and photo-z/ subdirectories of FITS files")
+                    help="Directory containing <region>/sweep/ and <region>/photo-z/ "
+                         "subdirectories of FITS files")
 parser.add_argument("--output-dir", type=str, default=OUTPUT_DIR,
-                    help="Directory to save minified parquet files")
+                    help="Directory to save minified parquet files, one <region>/ "
+                         "subdirectory per region")
+parser.add_argument("--region", choices=REGIONS + ["both"], default="north",
+                    help="DR9 reduction to minify. Decides which side of the --resolve "
+                         "boundary is kept.")
 parser.add_argument("--processes", type=int, default=8, help="Number of parallel worker processes")
 parser.add_argument("--resolve", choices=["dr9", "dec-only", "none"], default="dr9",
-                    help="Row cut for the north/south overlap. 'dr9' is the survey's own rule "
-                         "(Dec > 32.375 and north of the Galactic plane). 'dec-only' drops the "
-                         "Galactic half, which keeps the Dec > 32.375, b < 0 sources that no "
-                         "other ingested catalog covers. 'none' keeps every row.")
+                    help="Row cut for the north/south overlap. 'dr9' is the survey's own rule: "
+                         "north keeps Dec > 32.375 and north of the Galactic plane, south keeps "
+                         "the rest. 'dec-only' drops the Galactic half, so north keeps every "
+                         "Dec > 32.375 source, including the b < 0 ones that no other ingested "
+                         "catalog covers, and south keeps Dec <= 32.375. 'none' keeps every row "
+                         "of both regions, so the overlap is counted twice.")
 
 
 def _worker_ignores_sigint():
@@ -131,11 +150,23 @@ def _read_columns(path, columns):
 		return pd.DataFrame(frame)
 
 
-def _resolve_mask(df, resolve):
-	"""Rows of a dr9/north sweep that this catalog should own, under the chosen rule."""
+def _resolve_mask(df, resolve, region):
+	"""Rows of a dr9/<region> sweep that this catalog should own, under the chosen rule.
+
+	North and south take complementary halves of the sky, so a source in the overlap is kept
+	by exactly one of them.
+	"""
+	if region not in REGIONS:
+		raise ValueError(f"unknown region {region!r}, expected one of {REGIONS}")
 	if resolve == "none":
 		return np.ones(len(df), dtype=bool)
 
+	north = _north_mask(df, resolve)
+	return north if region == "north" else ~north
+
+
+def _north_mask(df, resolve):
+	"""Rows of a sweep that fall in the area the resolve rule gives to dr9/north."""
 	mask = df['dec'].to_numpy() > RESOLVE_DEC
 	if resolve == "dec-only":
 		return mask
@@ -154,8 +185,8 @@ def _resolve_mask(df, resolve):
 	return galactic_b
 
 
-def minify_pair(sweep_path, photoz_path, output_path, resolve="dr9", check_rows=4096):
-	"""Merge one sweep/photo-z FITS pair into a single minified parquet file."""
+def minify_pair(sweep_path, photoz_path, output_path, region, resolve="dr9", check_rows=4096):
+	"""Merge one dr9/<region> sweep/photo-z FITS pair into a single minified parquet file."""
 	sweep = _read_columns(sweep_path, SWEEP_COLUMNS)
 	photoz = _read_columns(photoz_path, PHOTOZ_KEY_COLUMNS + PHOTOZ_COLUMNS)
 
@@ -181,7 +212,7 @@ def minify_pair(sweep_path, photoz_path, output_path, resolve="dr9", check_rows=
 	df = pd.concat([sweep, photoz[PHOTOZ_COLUMNS]], axis=1)
 	del sweep, photoz
 
-	df = df[_resolve_mask(df, resolve)].reset_index(drop=True)
+	df = df[_resolve_mask(df, resolve, region)].reset_index(drop=True)
 
 	# -99 means "not measured" for every float column the photo-z sweeps contribute. Turn
 	# those into nulls so the ingest omits the field entirely, rather than writing a -99 that
@@ -208,9 +239,9 @@ def minify_pair(sweep_path, photoz_path, output_path, resolve="dr9", check_rows=
 
 
 def _minify_pair_task(arguments):
-	sweep_path, photoz_path, output_path, resolve = arguments
+	sweep_path, photoz_path, output_path, region, resolve = arguments
 	try:
-		rows = minify_pair(sweep_path, photoz_path, output_path, resolve=resolve)
+		rows = minify_pair(sweep_path, photoz_path, output_path, region, resolve=resolve)
 		return (sweep_path, rows, None)
 	except Exception as e:
 		# One corrupt file should not take down a run that is most of the way through a few
@@ -218,10 +249,11 @@ def _minify_pair_task(arguments):
 		return (sweep_path, 0, f"{type(e).__name__}: {e}")
 
 
-def find_pairs(input_dir, output_dir):
-	"""Pair sweep files with their photo-z counterparts, skipping ones already minified."""
-	sweep_dir = os.path.join(input_dir, "sweep")
-	photoz_dir = os.path.join(input_dir, "photo-z")
+def find_pairs(input_dir, output_dir, region):
+	"""Pair a region's sweep files with their photo-z counterparts, skipping ones already minified."""
+	sweep_dir = os.path.join(input_dir, region, "sweep")
+	photoz_dir = os.path.join(input_dir, region, "photo-z")
+	output_dir = os.path.join(output_dir, region)
 	pairs = []
 	missing = []
 	for name in sorted(os.listdir(sweep_dir)):
@@ -243,15 +275,19 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	os.makedirs(args.output_dir, exist_ok=True)
 
-	pairs, missing = find_pairs(args.input_dir, args.output_dir)
-	if missing:
-		print(f"WARNING: {len(missing)} sweep files have no photo-z counterpart, skipping them")
-	print(f"Found {len(pairs)} pairs left to minify (resolve={args.resolve}).")
+	regions = REGIONS if args.region == "both" else [args.region]
+	tasks = []
+	for region in regions:
+		pairs, missing = find_pairs(args.input_dir, args.output_dir, region)
+		if missing:
+			print(f"WARNING: {len(missing)} dr9/{region} sweep files have no photo-z "
+			      f"counterpart, skipping them")
+		print(f"Found {len(pairs)} dr9/{region} pairs left to minify (resolve={args.resolve}).")
+		tasks.extend((s, p, o, region, args.resolve) for s, p, o in pairs)
 
 	nb_processes = max(1, min(args.processes, available_cpus()))
 	total_rows = 0
 	failures = []
-	tasks = [(s, p, o, args.resolve) for s, p, o in pairs]
 	interrupted = False
 	done = 0
 	with tqdm(total=len(tasks), desc="Minifying DR9 sweeps") as pbar:

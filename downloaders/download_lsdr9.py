@@ -72,7 +72,8 @@ parser.add_argument("--photoz-version", type=str, default=PHOTOZ_VERSION,
 parser.add_argument("--processes", type=int, default=8,
                     help="Number of pairs to download and minify concurrently")
 parser.add_argument("--resolve", choices=["dr9", "dec-only", "none"], default="dr9",
-                    help="Row cut applied by the minifier for the north/south overlap; see "
+                    help="Row cut applied by the minifier for the north/south overlap. Each "
+                         "region keeps its own side of the boundary; see "
                          "minifiers/ls-dr9-minify.py")
 parser.add_argument("--keep-fits", action="store_true",
                     help="Keep the downloaded FITS files instead of deleting them after minifying")
@@ -108,15 +109,18 @@ def sweep_dec_max(name):
     return int(match.group(6)) * (1 if match.group(5) == "p" else -1)
 
 
-def skip_by_dec_box(names, resolve):
-    """Drop sweeps whose entire Dec box falls below the resolve boundary.
+def skip_by_dec_box(names, resolve, region):
+    """Drop dr9/north sweeps whose entire Dec box falls below the resolve boundary.
 
     dr9/north reduces equatorial sky that the resolve hands to dr9/south, so those files
     would be downloaded in full only to minify down to zero rows. The filename gives the Dec
     box, so that is decidable before any bytes move. It only saves ~3% of the north volume
     (the high-Dec files are much the largest) but it avoids ~47 pointless downloads.
+
+    South is never skipped: it keeps everything below the boundary and, under the dr9 rule,
+    the b < 0 sources above it too, so any south sweep can contribute rows.
     """
-    if resolve == "none":
+    if resolve == "none" or region != "north":
         return names, 0
     kept = []
     skipped = 0
@@ -198,7 +202,7 @@ def process_pair(task):
         if args.no_minify:
             return (name, 0, None)
         rows = ls_dr9_minify.minify_pair(
-            sweep_path, photoz_path, output_path, resolve=args.resolve
+            sweep_path, photoz_path, output_path, region, resolve=args.resolve
         )
         if not args.keep_fits:
             os.remove(sweep_path)
@@ -220,7 +224,7 @@ if __name__ == "__main__":
         listing_url = f"{BASE_URL}/{region}/sweep/{SWEEP_VERSION}/"
         print(f"Listing {listing_url} ...")
         names = list_fits(listing_url)
-        names, skipped = skip_by_dec_box(names, args.resolve)
+        names, skipped = skip_by_dec_box(names, args.resolve, region)
         print(f"  {len(names)} sweep files in dr9/{region}"
               f"{f' ({skipped} skipped: Dec box entirely below the resolve boundary)' if skipped else ''}")
         tasks.extend((region, name, args) for name in names)
