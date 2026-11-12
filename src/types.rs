@@ -826,6 +826,15 @@ fn required_i16(series: &polars::prelude::Column, name: &str, row: usize) -> Res
         .ok_or_else(|| anyhow::anyhow!("Missing {} at row {}", name, row))
 }
 
+/// Read a value from a column that older downloads of the catalog do not have. A missing
+/// column reads as None for every row, so those files still ingest with the field absent.
+fn optional_f32(series: Option<&polars::prelude::Column>, row: usize) -> Result<Option<f32>> {
+    match series {
+        Some(series) => Ok(series.f32()?.get(row)),
+        None => Ok(None),
+    }
+}
+
 /// Legacy Survey `_id`: objid + (brickid << N) + (release << 40).
 ///
 /// N is 20 from DR10 on (release >= 10000) and 16 before it. The release number occupies the
@@ -1014,6 +1023,11 @@ impl HasCoordinates for LSDR9 {
 ///
 /// Same shape as [`LSDR9`] but with the i-band columns DR10 added and without NOBS, which the
 /// DR10 download does not fetch. See [`LSDR9`] for why these are two types rather than one.
+///
+/// The g/i/z `flux_ivar_*` and `fracflux_*` columns are the exception to "every column is
+/// required": they were added to the DR10 download after it had already been run, and the
+/// downloader skips files that exist, so a DR10 directory fetched before then has no such
+/// columns. They are read optionally so that directory still ingests.
 #[skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LSDR10 {
@@ -1052,17 +1066,17 @@ pub struct LSDR10 {
     /// Per-band inverse variances. `flux_r * sqrt(flux_ivar_r)` is the r-band
     /// signal-to-noise that separates a marginal REX detection from a real
     /// galaxy; the other bands give the same cut a fallback when r is missing.
-    pub flux_ivar_g: f32,
+    pub flux_ivar_g: Option<f32>,
     pub flux_ivar_r: f32,
-    pub flux_ivar_i: f32,
-    pub flux_ivar_z: f32,
+    pub flux_ivar_i: Option<f32>,
+    pub flux_ivar_z: Option<f32>,
     /// Fraction of the flux in this object's aperture contributed by neighbours.
     /// High values mark blended sources inside a larger galaxy, which are
     /// shredded fragments rather than hosts.
-    pub fracflux_g: f32,
+    pub fracflux_g: Option<f32>,
     pub fracflux_r: f32,
-    pub fracflux_i: f32,
-    pub fracflux_z: f32,
+    pub fracflux_i: Option<f32>,
+    pub fracflux_z: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -1094,14 +1108,15 @@ impl ParquetRowBatch for LSDR10 {
         let shape_e1_series = df.column("shape_e1")?;
         let shape_e2_series = df.column("shape_e2")?;
         let sersic_series = df.column("sersic")?;
-        let flux_ivar_g_series = df.column("flux_ivar_g")?;
         let flux_ivar_r_series = df.column("flux_ivar_r")?;
-        let flux_ivar_i_series = df.column("flux_ivar_i")?;
-        let flux_ivar_z_series = df.column("flux_ivar_z")?;
-        let fracflux_g_series = df.column("fracflux_g")?;
         let fracflux_r_series = df.column("fracflux_r")?;
-        let fracflux_i_series = df.column("fracflux_i")?;
-        let fracflux_z_series = df.column("fracflux_z")?;
+        // Absent from DR10 files downloaded before these bands were added; see the struct docs.
+        let flux_ivar_g_series = df.column("flux_ivar_g").ok();
+        let flux_ivar_i_series = df.column("flux_ivar_i").ok();
+        let flux_ivar_z_series = df.column("flux_ivar_z").ok();
+        let fracflux_g_series = df.column("fracflux_g").ok();
+        let fracflux_i_series = df.column("fracflux_i").ok();
+        let fracflux_z_series = df.column("fracflux_z").ok();
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -1157,14 +1172,14 @@ impl ParquetRowBatch for LSDR10 {
                 shape_e1: required_f32(shape_e1_series, "shape_e1", i)?,
                 shape_e2: required_f32(shape_e2_series, "shape_e2", i)?,
                 sersic: required_f32(sersic_series, "sersic", i)?,
-                flux_ivar_g: required_f32(flux_ivar_g_series, "flux_ivar_g", i)?,
+                flux_ivar_g: optional_f32(flux_ivar_g_series, i)?,
                 flux_ivar_r: required_f32(flux_ivar_r_series, "flux_ivar_r", i)?,
-                flux_ivar_i: required_f32(flux_ivar_i_series, "flux_ivar_i", i)?,
-                flux_ivar_z: required_f32(flux_ivar_z_series, "flux_ivar_z", i)?,
-                fracflux_g: required_f32(fracflux_g_series, "fracflux_g", i)?,
+                flux_ivar_i: optional_f32(flux_ivar_i_series, i)?,
+                flux_ivar_z: optional_f32(flux_ivar_z_series, i)?,
+                fracflux_g: optional_f32(fracflux_g_series, i)?,
                 fracflux_r: required_f32(fracflux_r_series, "fracflux_r", i)?,
-                fracflux_i: required_f32(fracflux_i_series, "fracflux_i", i)?,
-                fracflux_z: required_f32(fracflux_z_series, "fracflux_z", i)?,
+                fracflux_i: optional_f32(fracflux_i_series, i)?,
+                fracflux_z: optional_f32(fracflux_z_series, i)?,
             });
         }
         Ok(results)
@@ -1944,9 +1959,27 @@ mod tests {
 
         assert_eq!(rows[0].id, 12 + (521251i64 << 20) + (10000i64 << 40));
         assert_eq!(rows[0].flux_i, 6.5);
-        assert_eq!(rows[0].flux_ivar_i, 7.0);
-        assert_eq!(rows[0].fracflux_i, 0.04);
-        assert_eq!(rows[0].flux_ivar_g, 3.0);
+        assert_eq!(rows[0].flux_ivar_i, Some(7.0));
+        assert_eq!(rows[0].fracflux_i, Some(0.04));
+        assert_eq!(rows[0].flux_ivar_g, Some(3.0));
+    }
+
+    // A DR10 directory downloaded before the g/i/z quality columns were added has only the
+    // r-band ones. It must still ingest, with the newer fields absent.
+    #[test]
+    fn lsdr10_reads_a_download_without_the_g_i_z_quality_columns() {
+        let mut df = legacy_survey_frame(10000, &[("flux_i", 6.5)], false);
+        for name in ["flux_ivar_g", "flux_ivar_z", "fracflux_g", "fracflux_z"] {
+            df = df.drop(name).unwrap();
+        }
+
+        let rows = LSDR10::from_dataframe(&df).unwrap();
+
+        assert_eq!(rows[0].flux_ivar_r, 9.0);
+        assert_eq!(rows[0].fracflux_r, 0.01);
+        assert!(rows[0].flux_ivar_g.is_none());
+        assert!(rows[0].flux_ivar_i.is_none());
+        assert!(rows[0].fracflux_z.is_none());
     }
 
     // The point of splitting the structs: a column a release is supposed to have must be a
