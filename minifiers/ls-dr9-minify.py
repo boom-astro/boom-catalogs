@@ -191,6 +191,10 @@ def minify_pair(sweep_path, photoz_path, output_path, resolve="dr9", check_rows=
 			df.loc[df[col] <= MISSING_SENTINEL, col] = np.nan
 	# `survey` is blank for sources with no photo-z entry.
 	df.loc[df['survey'] == '', 'survey'] = None
+	# A sweep with no spec-z match at all leaves an all-None object column, which parquet
+	# stores as type null. The ingest reads `survey` as a string and rejects the whole file on
+	# that, so pin the type here.
+	df['survey'] = df['survey'].astype('string')
 
 	df = df[FINAL_COLUMNS]
 
