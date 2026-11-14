@@ -1275,6 +1275,117 @@ impl HasCoordinates for UVGapsXGaia {
     }
 }
 
+// UVGAPS (GALEX NUV survey of the Galactic plane, |b| < ~10.4 deg) star catalog with the
+// thesis cuts applied: `starcat_allscans_thesis_cuts_2842399.fits`, HDU 1
+// (UVGAPS_THESIS_CUTS), 2,842,399 rows x 19 columns. PRIVATE catalog: only ingest it into
+// instances that are allowed to serve it (see zvar-api's PRIVATE_CATALOGS).
+//
+//   plane_number  J  [KEPT -> _id] 0-based row index into the uncut 2019 catalog; joins to
+//                    number_plane / plane_number in the UVGAPS Gaia/PS crossmatch files
+//   NUMBER        J
+//   X_IMAGE       D
+//   Y_IMAGE       D
+//   ALPHA_J2000   D  [KEPT -> ra]
+//   DELTA_J2000   D  [KEPT -> dec]
+//   FLUX_AUTO     D  [KEPT -> flux_auto]
+//   FLUXERR_AUTO  D  [KEPT -> fluxerr_auto]
+//   FLUX_APER     D
+//   A_IMAGE       D
+//   B_IMAGE       D
+//   THETA_IMAGE   D
+//   FWHM_IMAGE    D  [KEPT -> fwhm_image]
+//   nuv           D  [KEPT -> nuv] 20.08 - 2.5 log10(FLUX_AUTO) + 0.25 (AB); the sign of the
+//                    0.25 offset is unresolved, so FLUX_AUTO is kept to recompute it
+//   gl            D  [KEPT -> gl]
+//   gb            D  [KEPT -> gb]
+//   expsum        D  [KEPT -> expsum]
+//   ctsum         E  [KEPT -> ctsum]
+//   bkgdsum       D  [KEPT -> bkgdsum]
+//
+// `nuv_err` is derived: 2.5 / ln(10) * FLUXERR_AUTO / FLUX_AUTO.
+//
+// Row FILTER applied in `read_batch`: drop rows whose RA/Dec aren't finite, which the
+// 2dsphere index would reject at insert time (the cut file has none).
+#[skip_serializing_none]
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq)]
+pub struct UVGaps {
+    #[serde(rename(serialize = "_id"))]
+    pub plane_number: i64,
+    pub ra: f64,
+    pub dec: f64,
+    pub nuv: f64,
+    pub nuv_err: Option<f64>,
+    pub flux_auto: f64,
+    pub fluxerr_auto: f64,
+    pub fwhm_image: f64,
+    pub gl: f64,
+    pub gb: f64,
+    pub expsum: f64,
+    pub ctsum: f32,
+    pub bkgdsum: f64,
+}
+
+/// NUV magnitude error from the flux and its error, `None` unless both are finite and the
+/// flux is positive.
+fn mag_err_from_flux(flux: f64, flux_err: f64) -> Option<f64> {
+    let err = 2.5 / std::f64::consts::LN_10 * flux_err / flux;
+    (flux > 0.0 && err.is_finite()).then_some(err)
+}
+
+impl FitsRowBatch for UVGaps {
+    fn read_batch(
+        hdu: &fitsio::hdu::FitsHdu,
+        fptr: &mut FitsFile,
+        range: std::ops::Range<usize>,
+    ) -> Result<Vec<UVGaps>> {
+        let plane_number_col: Vec<i32> = hdu.read_col_range(fptr, "plane_number", &range)?;
+        let ra_col: Vec<f64> = hdu.read_col_range(fptr, "ALPHA_J2000", &range)?;
+        let dec_col: Vec<f64> = hdu.read_col_range(fptr, "DELTA_J2000", &range)?;
+        let nuv_col: Vec<f64> = hdu.read_col_range(fptr, "nuv", &range)?;
+        let flux_col: Vec<f64> = hdu.read_col_range(fptr, "FLUX_AUTO", &range)?;
+        let fluxerr_col: Vec<f64> = hdu.read_col_range(fptr, "FLUXERR_AUTO", &range)?;
+        let fwhm_col: Vec<f64> = hdu.read_col_range(fptr, "FWHM_IMAGE", &range)?;
+        let gl_col: Vec<f64> = hdu.read_col_range(fptr, "gl", &range)?;
+        let gb_col: Vec<f64> = hdu.read_col_range(fptr, "gb", &range)?;
+        let expsum_col: Vec<f64> = hdu.read_col_range(fptr, "expsum", &range)?;
+        let ctsum_col: Vec<f32> = hdu.read_col_range(fptr, "ctsum", &range)?;
+        let bkgdsum_col: Vec<f64> = hdu.read_col_range(fptr, "bkgdsum", &range)?;
+
+        let mut rows = Vec::with_capacity(plane_number_col.len());
+        for i in 0..plane_number_col.len() {
+            if !(ra_col[i].is_finite() && dec_col[i].is_finite()) {
+                eprintln!(
+                    "Skipping UVGAPS plane_number {}: non-finite coordinates",
+                    plane_number_col[i]
+                );
+                continue;
+            }
+            rows.push(UVGaps {
+                plane_number: plane_number_col[i] as i64,
+                ra: ra_col[i],
+                dec: dec_col[i],
+                nuv: nuv_col[i],
+                nuv_err: mag_err_from_flux(flux_col[i], fluxerr_col[i]),
+                flux_auto: flux_col[i],
+                fluxerr_auto: fluxerr_col[i],
+                fwhm_image: fwhm_col[i],
+                gl: gl_col[i],
+                gb: gb_col[i],
+                expsum: expsum_col[i],
+                ctsum: ctsum_col[i],
+                bkgdsum: bkgdsum_col[i],
+            });
+        }
+        Ok(rows)
+    }
+}
+
+impl HasCoordinates for UVGaps {
+    fn has_coordinates() -> bool {
+        true
+    }
+}
+
 // DESI DR1 spec-z, from the iron `zall-tilecumulative-iron.fits` zcatalog.
 // HDU 1 (ZCATALOG): 30,304,000 rows x 148 columns. Full schema in the DESI datamodel:
 //   https://desidatamodel.readthedocs.io/en/latest/DESI_SPECTRO_REDUX/SPECPROD/zcatalog/VERSION/zall-tilecumulative-SPECPROD.html
@@ -1458,6 +1569,7 @@ pub enum FitsCatalogs {
     Milliquas,
     ERosita,
     UVGapsXGaia,
+    UVGaps,
     DesiDr1,
 }
 
@@ -1623,5 +1735,44 @@ mod tests {
         assert!(value.get("DistMpc").unwrap().is_null());
         assert!(value.get("Diam").unwrap().is_null());
         assert!(value.get("Mstar").unwrap().is_null());
+    }
+
+    // zvar-api's UVGaps projection reads these exact keys (`_id` = plane_number).
+    #[test]
+    fn uvgaps_serializes_under_api_keys() {
+        let value = serde_json::to_value(UVGaps {
+            nuv_err: Some(0.1),
+            ..Default::default()
+        })
+        .unwrap();
+        let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(|k| &**k).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                "_id",
+                "bkgdsum",
+                "ctsum",
+                "dec",
+                "expsum",
+                "flux_auto",
+                "fluxerr_auto",
+                "fwhm_image",
+                "gb",
+                "gl",
+                "nuv",
+                "nuv_err",
+                "ra",
+            ]
+        );
+    }
+
+    #[test]
+    fn uvgaps_mag_err() {
+        let err = mag_err_from_flux(489.186, 2.3637).unwrap();
+        assert!((err - 0.005246).abs() < 1e-5, "{err}");
+        assert_eq!(mag_err_from_flux(0.0, 1.0), None);
+        assert_eq!(mag_err_from_flux(-1.0, 1.0), None);
+        assert_eq!(mag_err_from_flux(f64::NAN, 1.0), None);
     }
 }

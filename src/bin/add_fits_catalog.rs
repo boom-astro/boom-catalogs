@@ -1,7 +1,7 @@
 use anyhow::Result;
 use boom_catalogs::db::from_uri;
 use boom_catalogs::fits::process_fits;
-use boom_catalogs::types::{DesiDr1, ERosita, FitsCatalogs, Milliquas, Ned, UVGapsXGaia};
+use boom_catalogs::types::{DesiDr1, ERosita, FitsCatalogs, Milliquas, Ned, UVGaps, UVGapsXGaia};
 use clap::Parser;
 use mongodb::bson::Document;
 
@@ -105,6 +105,19 @@ async fn main() -> Result<()> {
         }
         FitsCatalogs::UVGapsXGaia => {
             process_fits::<UVGapsXGaia>(
+                args.uri.clone(),
+                args.db.clone(),
+                args.collection.clone(),
+                args.path,
+                args.num_workers,
+                args.batch_size,
+                args.channel_capacity,
+                args.init_indexes,
+            )
+            .await?;
+        }
+        FitsCatalogs::UVGaps => {
+            process_fits::<UVGaps>(
                 args.uri.clone(),
                 args.db.clone(),
                 args.collection.clone(),
