@@ -51,6 +51,12 @@ LSDR10_COLUMNS = [
     "SERSIC",
     "FLUX_IVAR_R",
     "FRACFLUX_R",
+    "FLUX_IVAR_G",
+    "FLUX_IVAR_I",
+    "FLUX_IVAR_Z",
+    "FRACFLUX_G",
+    "FRACFLUX_I",
+    "FRACFLUX_Z",
 ]
 
 CATALOG_BASE = "https://data.lsdb.io/hats/legacysurvey_dr10.1/legacysurvey"
