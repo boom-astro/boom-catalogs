@@ -851,6 +851,12 @@ pub struct LSDR10 {
     /// neighbours. High values mark blended sources inside a larger galaxy,
     /// which are shredded fragments rather than hosts.
     pub fracflux_r: Option<f32>,
+    pub flux_ivar_g: Option<f32>,
+    pub flux_ivar_i: Option<f32>,
+    pub flux_ivar_z: Option<f32>,
+    pub fracflux_g: Option<f32>,
+    pub fracflux_i: Option<f32>,
+    pub fracflux_z: Option<f32>,
 }
 
 impl ParquetRowBatch for LSDR10 {
@@ -884,6 +890,12 @@ impl ParquetRowBatch for LSDR10 {
         let sersic_series = df.column("sersic")?;
         let flux_ivar_r_series = df.column("flux_ivar_r")?;
         let fracflux_r_series = df.column("fracflux_r")?;
+        let flux_ivar_g_series = df.column("flux_ivar_g")?;
+        let flux_ivar_i_series = df.column("flux_ivar_i")?;
+        let flux_ivar_z_series = df.column("flux_ivar_z")?;
+        let fracflux_g_series = df.column("fracflux_g")?;
+        let fracflux_i_series = df.column("fracflux_i")?;
+        let fracflux_z_series = df.column("fracflux_z")?;
 
         let mut results = Vec::with_capacity(df.height());
         for i in 0..df.height() {
@@ -946,6 +958,12 @@ impl ParquetRowBatch for LSDR10 {
                 sersic: sersic_series.f32()?.get(i),
                 flux_ivar_r: flux_ivar_r_series.f32()?.get(i),
                 fracflux_r: fracflux_r_series.f32()?.get(i),
+                flux_ivar_g: flux_ivar_g_series.f32()?.get(i),
+                flux_ivar_i: flux_ivar_i_series.f32()?.get(i),
+                flux_ivar_z: flux_ivar_z_series.f32()?.get(i),
+                fracflux_g: fracflux_g_series.f32()?.get(i),
+                fracflux_i: fracflux_i_series.f32()?.get(i),
+                fracflux_z: fracflux_z_series.f32()?.get(i),
             });
         }
         Ok(results)
