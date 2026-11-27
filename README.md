@@ -199,3 +199,26 @@ To stop the instance:
 ```bash
 apptainer instance stop apptainer
 ```
+### Publish archival spectroscopy indices
+
+Publish the local spectroscopy inventory as immutable release revisions. The
+exporter reads one SQLite snapshot with `object` and `observation` tables and
+writes separate BOOM object and visit shards. Objects awaiting a first spectrum
+have zero visit counts. Alternate representations share the physical `visit`
+key. Visit rows include archive selectors for on-demand FITS access.
+
+```sh
+python downloaders/export_archival_indices.py index.sqlite /data/catalogs \
+  --revision 1 --gains watchlist-gains.json
+python downloaders/export_archival_indices.py index.sqlite /data/catalogs \
+  --revision 2 --changed-visits release-delta.jsonl.gz \
+  --changed-objects candidate-delta.jsonl --gains watchlist-gains.json
+```
+
+The delta visit file supplies normalized observation `_id` keys and the candidate
+file supplies `object_id` keys. Use a new increasing revision for each batch.
+The exporter publishes both shard families together under
+`staged/archival-spectroscopy/r<revision>/` and fails if a selected ID is absent.
+BOOM can ingest the visit shards followed by the object shards using the staged
+catalog tasks. Only stage public observing metadata and candidate information
+intended for access by BOOM users.
