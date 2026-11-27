@@ -6,6 +6,7 @@ pandas
 pyarrow
 fastparquet
 astropy
+astropy-healpix
 beautifulsoup4
 python-dotenv
 bs4
