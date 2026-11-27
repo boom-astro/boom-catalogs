@@ -167,29 +167,37 @@ def lamost(client, cone):
     estimates = {row["obsid"]: rv(row["rv"], row["rv_err"], "LASP", "survey_native")
                  for row in stellar}
     for row in lrs:
-        obs = row["obsid"]
-        yield record("lamost", "dr12-v2.0", "lrs", obs, row, "visit_coadd",
-                     gaia_dr3_source_id=row["gaia_source_id"] or None, spectral_class=row["class"],
-                     quality={"fibermask": row["fibermask"]}, rv=estimates.get(obs),
-                     spectrum=spectrum("lamost", f"{LAMOST}/dr12/v2.0/spectrum/fits/{obs}",
-                                       extensions=["COADD"]))
+        yield lamost_lrs_record(row, estimates.get(row["obsid"]))
     mrs = tap(client, url, f"""SELECT TOP {LIMIT} obsid,ra,dec,mjd,lmjm,band,coadd,
         snr,rv_br1,rv_br1_err,rv_br_flag,fibermask,bad_b,bad_r,gaia_source_id
         FROM med_catalogue WHERE {where}""")
     for row in mrs:
-        obs, band, minute = row["obsid"], row["band"], row["lmjm"]
-        coadd = row["coadd"] == "1"
-        if band not in {"B", "R"} or not coadd and not minute:
-            raise ValueError(f"Unrecognized LAMOST MRS spectrum row {row}")
-        extension = f"COADD_{band}" if coadd else f"{band}-{minute}"
-        yield record("lamost", "dr12-v2.0", "mrs", f"{obs}:{extension}", row,
-                     "visit_coadd" if coadd else "exposure",
-                     gaia_dr3_source_id=row["gaia_source_id"] or None, band=band,
-                     visit_id=obs, epoch_id=f"{obs}:coadd" if coadd else f"{obs}:{minute}",
-                     quality={key: row[key] for key in ("rv_br_flag", "fibermask", "bad_b", "bad_r")},
-                     rv=rv(row["rv_br1"], row["rv_br1_err"], "LAMOST_MRS_BR1", "survey_native"),
-                     spectrum=spectrum("lamost", f"{LAMOST}/openapi/dr12/v2.0/mrs/spectrum/fits?obsid={obs}",
-                                       extensions=[extension]))
+        yield lamost_mrs_record(row)
+
+
+def lamost_lrs_record(row, estimate):
+    obs = row["obsid"]
+    return record("lamost", "dr12-v2.0", "lrs", obs, row, "visit_coadd",
+                 gaia_dr3_source_id=row["gaia_source_id"] or None, spectral_class=row["class"],
+                 quality={"fibermask": row["fibermask"]}, rv=estimate,
+                 spectrum=spectrum("lamost", f"{LAMOST}/dr12/v2.0/spectrum/fits/{obs}",
+                                   extensions=["COADD"]))
+
+
+def lamost_mrs_record(row):
+    obs, band, minute = row["obsid"], row["band"], row["lmjm"]
+    coadd = row["coadd"] == "1"
+    if band not in {"B", "R"} or not coadd and not minute:
+        raise ValueError(f"Unrecognized LAMOST MRS spectrum row {row}")
+    extension = f"COADD_{band}" if coadd else f"{band}-{minute}"
+    return record("lamost", "dr12-v2.0", "mrs", f"{obs}:{extension}", row,
+                 "visit_coadd" if coadd else "exposure",
+                 gaia_dr3_source_id=row["gaia_source_id"] or None, band=band,
+                 visit_id=obs, epoch_id=f"{obs}:coadd" if coadd else f"{obs}:{minute}",
+                 quality={key: row[key] for key in ("rv_br_flag", "fibermask", "bad_b", "bad_r")},
+                 rv=rv(row["rv_br1"], row["rv_br1_err"], "LAMOST_MRS_BR1", "survey_native"),
+                 spectrum=spectrum("lamost", f"{LAMOST}/openapi/dr12/v2.0/mrs/spectrum/fits?obsid={obs}",
+                                   extensions=[extension]))
 
 
 def boss_locator(row):
@@ -199,6 +207,13 @@ def boss_locator(row):
     field, mjd, catalog = int(field), row["mjd"], row["catalogid"]
     return spectrum("boss", f"{SDSS}/spectro/boss/redux/{reduction}/spectra/daily/full/"
                     f"{field // 1000:03d}XXX/{field:06d}/{mjd}/spec-{field:06d}-{mjd}-{catalog}.fits")
+
+
+def apogee_locator(uri):
+    uri = uri.lstrip("/")
+    if uri.startswith("apogee/spectro/"):
+        uri = "spectro/apogee/" + uri.removeprefix("apogee/spectro/")
+    return spectrum("apogee", f"{SDSS}/{uri}") if uri.startswith("spectro/apogee/") else None
 
 
 def sdss(client, cone):
@@ -267,8 +282,7 @@ def sdss(client, cone):
         s.mjd,s.jd,s.vrad,s.vrelerr,s.starflag,s.snr,s.apogee_id,s.apred_vers
         FROM apogee_drp_allvisit s WHERE {cone.box('s.ra', 's.dec')}""")
     for row in visits:
-        uri = row["uri"].lstrip("/")
-        archive = spectrum("apogee", f"{SDSS}/{uri}") if uri.startswith("spectro/apogee/") else None
+        archive = apogee_locator(row["uri"])
         yield record("sdss", "dr20", "apogee", f"{row['apred_vers']}:{row['filename']}", row,
                      "visit_coadd", archive_source_id=row["apogee_id"], jd=floating(row["jd"]),
                      quality={"starflag": row["starflag"]},
@@ -330,7 +344,9 @@ def desi_pixel(client, cone, survey, program, pixel):
             if target != int(redshift["TARGETID"]):
                 raise ValueError(f"DESI redshift and FIBERMAP rows are misaligned in {url}")
             ra, dec = float(fiber["MEAN_FIBER_RA"]), float(fiber["MEAN_FIBER_DEC"])
-            if fiber["OBJTYPE"] == "SKY" or not cone.contains(ra, dec):
+            if fiber["OBJTYPE"] == "SKY" or not (0 <= ra < 360 and -90 <= dec <= 90):
+                continue
+            if cone is not None and not cone.contains(ra, dec):
                 continue
             targets[target] = (redshift, fiber, {"ra": ra, "dec": dec})
         for row in hdus["EXP_FIBERMAP"].data:
@@ -423,12 +439,27 @@ def write_catalog(path, rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cone", nargs=3, type=float, action="append", required=True,
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--cone", nargs=3, type=float, action="append",
                         metavar=("RA", "DEC", "RADIUS_DEG"))
+    selection.add_argument("--all", action="store_true", help="Import complete releases into an output directory.")
+    parser.add_argument("--plan", action="store_true", help="List bulk inputs and shard groups, then exit.")
+    parser.add_argument("--workers", type=int, default=4, help="Concurrent DESI metadata partitions in bulk mode.")
     parser.add_argument("--survey", choices=IMPORTERS, action="append",
                         help="Repeat to select multiple surveys. The default is all three.")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error("--workers must be positive")
+    if args.all:
+        if __package__:
+            from .import_archival_spectra_bulk import run_bulk
+        else:
+            from import_archival_spectra_bulk import run_bulk
+        run_bulk(args.output, args.survey or IMPORTERS, args.workers, args.plan)
+        return
+    if args.plan:
+        parser.error("--plan requires --all")
     try:
         cones = [Cone(*values) for values in args.cone]
     except ValueError as exc:

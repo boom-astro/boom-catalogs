@@ -49,6 +49,13 @@ class FootprintTests(unittest.TestCase):
         ))
         self.assertIsNone(importer.boss_locator({**row, "run2d": "unknown"}))
 
+    def test_apogee_fits_and_cas_paths_resolve_to_same_locator(self):
+        prefix = "redux/1.3/visit/apo25m/104645/8005/59936/apVisit-1.3-apo25m-8005-59936-221.fits"
+        fits_url = importer.apogee_locator("apogee/spectro/" + prefix)
+        cas_url = importer.apogee_locator("spectro/apogee/" + prefix)
+        self.assertEqual(fits_url, cas_url)
+        self.assertIn("/spectro/apogee/", fits_url["url"])
+
     def test_catalog_is_deterministic_and_preserves_native_id_precision(self):
         native_id = "39627848784286649"
         row = importer.record("desi", "dr1", "test", native_id, {"ra": "0.01", "dec": "4"},

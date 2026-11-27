@@ -32,6 +32,29 @@ cargo build --release
 
 ## Archival spectroscopy metadata
 
+Use the bulk importer for a complete release ingestion. It reads catalog
+tables and DESI exposure metadata and leaves spectral FITS downloads on demand.
+
+```bash
+python downloaders/import_archival_spectra.py --all --plan --output archival-spectra
+python downloaders/import_archival_spectra.py --all --output archival-spectra
+```
+
+The plan reads the DESI release index and lists the bulk inputs. The import
+uses LAMOST general and stellar CSVs, SDSS FITS summary tables (including
+BOSSNet visits and both APOGEE eras), and the DESI Iron tile-pixel index and
+Redrock tables. Each completed partition is checkpointed. Run the same
+command again after an interruption to reuse completed partitions and staged
+downloads. The completed `manifest.json` lists the gzip JSONL shards and row
+counts. Use a new output directory for a new release. Reserve scratch space
+for the downloaded metadata and unpacked FITS under `.downloads/`, in
+addition to the output shards. Limit concurrent DESI partitions with
+`--workers` and limit the run to specific releases with repeatable
+`--survey` options. The SDSS scope is BOSS and APOGEE spectroscopy, including
+earlier optical releases. Integral-field products such as MaNGA and LVM are
+outside this fiber spectroscopy catalog. The SDSS-V BOSS input is the daily
+visit summary. Derived epoch and all-epoch coadds are outside the visit index.
+
 Use the footprint importer to build a gzip JSONL observation catalog from
 LAMOST DR12 v2.0 (LRS and MRS), SDSS DR20 (legacy optical, BOSS, and APOGEE
 visits carried over from DR19), and DESI DR1 (Redrock and Milky Way Survey).
@@ -68,8 +91,20 @@ mongosh mongodb://127.0.0.1:27017/boom_test --eval \
 
 This collection is intended for direct queries. BOOM's catalog registry and
 SkyPortal viewer require their own integration to expose it in a deployment.
-For survey-wide ingestion use partitioned release files. The cone importer
-fails when a bounded archive query reaches its row limit.
+For a bulk test load, stream the completed manifest's shards into a single
+MongoDB import and then create the spatial index as above.
+
+```bash
+set -o pipefail
+jq -r '.jobs[].shards[].path' archival-spectra/manifest.json | (
+  while IFS= read -r shard; do
+    gzip -dc "archival-spectra/$shard" || exit
+  done
+) | mongoimport --uri mongodb://127.0.0.1:27017/boom_test \
+    --collection Archival_Spectra_Footprint_v1 --mode upsert --stopOnError
+```
+
+The cone importer fails when a bounded archive query reaches its row limit.
 
 ## Docker and Apptainer
 You can use Docker or Apptainer to create a containerized environment for running the scripts.
