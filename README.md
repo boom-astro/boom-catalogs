@@ -106,6 +106,30 @@ jq -r '.jobs[].shards[].path' archival-spectra/manifest.json | (
 
 The cone importer fails when a bounded archive query reaches its row limit.
 
+### Search for repeat radial velocities
+
+Scan a completed release manifest after backfill:
+
+```bash
+python downloaders/search_archival_rv.py \
+  --manifest archival-spectra/manifest.json \
+  --scratch-dir archival-spectra/scratch \
+  --output candidates-v1.jsonl.gz
+```
+
+This scans every shard, groups visits by Gaia DR3 ID where available and by
+namespaced survey target ID otherwise, and reports the strongest passing pair
+per source and pipeline. It filters archive flags and S/N, merges simultaneous
+LAMOST arms and same-exposure DESI rows, and uses an MRS coadd only if no usable
+exposures from that visit remain. It keeps the FITS locators in the output;
+the search never fetches spectral pixels. The default discovery cuts are
+30 km/s, five nominal sigma, and S/N 5. The nominal significance includes
+conservative per-pipeline error floors and is a ranking statistic, with no
+correction for the number of tested pairs. Confirm candidates on the spectra.
+Comparisons stay within a release and pipeline because cross-instrument RV zero
+points have not been fit. Use `--footprint` instead of `--manifest` for a
+local test, and inspect `--help` for alternate thresholds or survey selection.
+
 ## Docker and Apptainer
 You can use Docker or Apptainer to create a containerized environment for running the scripts.
 

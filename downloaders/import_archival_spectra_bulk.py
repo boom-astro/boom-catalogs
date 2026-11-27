@@ -148,7 +148,7 @@ def valid_position(row):
 
 
 def lamost_lrs(path, stellar, cache):
-    columns = ("obsid", "ra", "dec", "mjd", "snrr", "class", "fibermask", "gaia_source_id")
+    columns = ("obsid", "uid", "ra", "dec", "mjd", "snrr", "class", "fibermask", "gaia_source_id")
     estimates = ((row["obsid"], spectra.rv(row["rv"], row["rv_err"], "LASP", "survey_native"))
                  for row in csv_records(stellar, ("obsid", "rv", "rv_err")))
     with closing(lookup(cache / "lamost-lrs-stellar.sqlite", estimates)) as db:
@@ -158,7 +158,7 @@ def lamost_lrs(path, stellar, cache):
 
 
 def lamost_mrs(path):
-    columns = ("obsid", "ra", "dec", "mjd", "lmjm", "band", "coadd", "snr", "rv_br1",
+    columns = ("obsid", "uid", "ra", "dec", "mjd", "lmjm", "band", "coadd", "snr", "rv_br1",
                "rv_br1_err", "rv_br_flag", "fibermask", "bad_b", "bad_r", "gaia_source_id")
     for row in csv_records(path, columns):
         if valid_position(row):

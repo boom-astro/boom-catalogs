@@ -160,7 +160,7 @@ def record(survey, release, product, key, row, granularity, **metadata):
 def lamost(client, cone):
     url = f"{LAMOST}/dr12/v2.0/voservice/tap/sync"
     where = cone.adql("ra", "dec")
-    lrs = tap(client, url, f"""SELECT TOP {LIMIT} obsid,ra,dec,mjd,snrr AS snr,class,
+    lrs = tap(client, url, f"""SELECT TOP {LIMIT} obsid,uid,ra,dec,mjd,snrr AS snr,class,
         fibermask,gaia_source_id FROM catalogue WHERE {where}""")
     stellar = tap(client, url, f"""SELECT TOP {LIMIT} obsid,rv,rv_err
         FROM stellar WHERE {where}""")
@@ -168,7 +168,7 @@ def lamost(client, cone):
                  for row in stellar}
     for row in lrs:
         yield lamost_lrs_record(row, estimates.get(row["obsid"]))
-    mrs = tap(client, url, f"""SELECT TOP {LIMIT} obsid,ra,dec,mjd,lmjm,band,coadd,
+    mrs = tap(client, url, f"""SELECT TOP {LIMIT} obsid,uid,ra,dec,mjd,lmjm,band,coadd,
         snr,rv_br1,rv_br1_err,rv_br_flag,fibermask,bad_b,bad_r,gaia_source_id
         FROM med_catalogue WHERE {where}""")
     for row in mrs:
@@ -178,7 +178,8 @@ def lamost(client, cone):
 def lamost_lrs_record(row, estimate):
     obs = row["obsid"]
     return record("lamost", "dr12-v2.0", "lrs", obs, row, "visit_coadd",
-                 gaia_dr3_source_id=row["gaia_source_id"] or None, spectral_class=row["class"],
+                 gaia_dr3_source_id=row["gaia_source_id"] or None,
+                 archive_source_id=row.get("uid") or None, spectral_class=row["class"],
                  quality={"fibermask": row["fibermask"]}, rv=estimate,
                  spectrum=spectrum("lamost", f"{LAMOST}/dr12/v2.0/spectrum/fits/{obs}",
                                    extensions=["COADD"]))
@@ -192,7 +193,8 @@ def lamost_mrs_record(row):
     extension = f"COADD_{band}" if coadd else f"{band}-{minute}"
     return record("lamost", "dr12-v2.0", "mrs", f"{obs}:{extension}", row,
                  "visit_coadd" if coadd else "exposure",
-                 gaia_dr3_source_id=row["gaia_source_id"] or None, band=band,
+                 gaia_dr3_source_id=row["gaia_source_id"] or None,
+                 archive_source_id=row.get("uid") or None, band=band,
                  visit_id=obs, epoch_id=f"{obs}:coadd" if coadd else f"{obs}:{minute}",
                  quality={key: row[key] for key in ("rv_br_flag", "fibermask", "bad_b", "bad_r")},
                  rv=rv(row["rv_br1"], row["rv_br1_err"], "LAMOST_MRS_BR1", "survey_native"),
