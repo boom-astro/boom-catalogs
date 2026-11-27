@@ -59,9 +59,9 @@ the spatial index with `mongosh`. The import uses the record ID for repeatable
 upserts. The test collection name can be changed independently of the filename.
 
 ```bash
-mongoimport --uri mongodb://127.0.0.1:27017/boom_test \
-  --collection Archival_Spectra_Footprint_v1 --mode upsert --stopOnError \
-  --gzip --file archival-spectra-footprint.jsonl.gz
+gzip -dc archival-spectra-footprint.jsonl.gz | \
+  mongoimport --uri mongodb://127.0.0.1:27017/boom_test \
+    --collection Archival_Spectra_Footprint_v1 --mode upsert --stopOnError
 mongosh mongodb://127.0.0.1:27017/boom_test --eval \
   'db.Archival_Spectra_Footprint_v1.createIndex({"coordinates.radec_geojson": "2dsphere"})'
 ```
