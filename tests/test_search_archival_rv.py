@@ -1,3 +1,4 @@
+import csv
 import gzip
 import json
 import tempfile
@@ -5,6 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from downloaders.fourmost_rv import REQUIRED
 from downloaders.search_archival_rv import search
 
 
@@ -59,3 +61,42 @@ class RepeatRvTests(unittest.TestCase):
                              ["one:83556052:B", "two:83556082:B"])
             args.min_baseline_days = 0.1
             self.assertEqual(search(args)["candidates"], 0)
+
+    def test_fourmost_normalized_visits_keep_exposures_and_pipelines_separate(self):
+        base = {
+            "release": "example", "pipeline": "pipeline-1", "spectrograph": "lrs-a",
+            "target_id": "test", "exposure_id": "a", "ra": "5", "dec": "-15",
+            "mjd_utc_mid": "60300.05", "exptime_s": "600", "snr": "16",
+            "rv_barycentric_km_s": "20", "rv_error_km_s": "2", "quality_ok": "1",
+            "public": "1", "spectrum_url": "https://example.org/test.fits",
+        }
+        rows = [
+            base, {**base, "exposure_id": "b", "rv_barycentric_km_s": "90", "mjd_utc_mid": "60301.25"},
+            {**base, "exposure_id": "c", "rv_barycentric_km_s": "800", "quality_ok": "0"},
+            {**base, "exposure_id": "d", "rv_barycentric_km_s": "900", "spectrograph": "lrs-b"},
+            {**base, "exposure_id": "e", "rv_barycentric_km_s": "990", "pipeline": "pipeline-2"},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "fourmost.csv"
+            with path.open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=sorted(REQUIRED))
+                writer.writeheader()
+                writer.writerows(rows)
+            args = SimpleNamespace(manifest=None, footprint=None, fourmost_visits=[path],
+                                   output=root / "ranked.jsonl.gz", scratch_dir=root, survey=None,
+                                   min_snr=5, min_baseline_days=0, min_delta_km_s=30, min_sigma=5)
+            self.assertEqual(search(args)["candidates"], 1)
+            with gzip.open(args.output, "rt") as stream:
+                candidate = json.loads(stream.readline())
+            self.assertEqual(candidate["survey"], "fourmost")
+            self.assertEqual(candidate["n_visits"], 2)
+            self.assertEqual(candidate["delta_km_s"], 70)
+            self.assertEqual(candidate["best_pair"][0]["exptime_s"], 600)
+            self.assertEqual(candidate["best_pair"][0]["rv_frame"], "barycentric")
+            with path.open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=sorted(REQUIRED))
+                writer.writeheader()
+                writer.writerow({**base, "public": "0"})
+            with self.assertRaisesRegex(ValueError, "only public 4MOST visits"):
+                search(args)

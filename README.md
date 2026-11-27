@@ -130,6 +130,26 @@ Comparisons stay within a release and pipeline because cross-instrument RV zero
 points have not been fit. Use `--footprint` instead of `--manifest` for a
 local test, and inspect `--help` for alternate thresholds or survey selection.
 
+#### Include 4MOST visits
+
+Append `--fourmost-visits fourmost-visits.csv` to include a public 4MOST
+metadata export. The flag also works on its own. This is a normalized exchange
+format for reduced visit RVs; it does not read ESO raw frames or assume a
+particular upstream 4PA table schema.
+
+Required CSV fields are `release`, `pipeline`, `spectrograph` (`lrs-a`,
+`lrs-b`, or `hrs`), `target_id`, `exposure_id`, `ra`, `dec`,
+`mjd_utc_mid`, `exptime_s`, `snr`, `rv_barycentric_km_s`,
+`rv_error_km_s`, `quality_ok`, `public`, and `spectrum_url`. A
+`gaia_dr3_source_id` is optional. Coordinates are ICRS degrees and identifiers
+are strings. Export independent spectra with a single RV per target and
+exposure. Set `quality_ok` to `1` for an accepted pipeline result and
+`public` to `1` for each row. Supply a public HTTPS locator for the
+extracted visit spectrum. Use distinct pipeline labels when extraction or
+RV zero-point calibrations differ. LRS-A, LRS-B, and HRS are ranked separately
+with provisional discovery floors of 3, 3, and 1 km/s respectively.
+The scan preserves exposure duration for phase-smearing checks.
+
 ## Docker and Apptainer
 You can use Docker or Apptainer to create a containerized environment for running the scripts.
 

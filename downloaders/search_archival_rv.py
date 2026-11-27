@@ -11,6 +11,11 @@ from collections import Counter
 from contextlib import closing
 from pathlib import Path
 
+if __package__:
+    from .fourmost_rv import PRODUCTS as FOURMOST_FLOORS, read_visits as fourmost_visits
+else:
+    from fourmost_rv import PRODUCTS as FOURMOST_FLOORS, read_visits as fourmost_visits
+
 # Conservative per-visit floors in km/s for discovery ranking. Different
 # pipelines are compared separately until their zero points are calibrated.
 FLOORS = {
@@ -37,6 +42,8 @@ def is_clear(value):
 def quality_passes(row):
     quality = row.get("quality") or {}
     match row["survey"], row["product"]:
+        case "fourmost", _:
+            return quality.get("accepted") is True and row["rv"].get("frame") == "barycentric"
         case "desi", "exposure":
             return flag(quality.get("rvs_warn")) == flag(quality.get("fiberstatus")) == 0
         case "lamost", "lrs":
@@ -74,7 +81,7 @@ def normalize(row, min_snr):
     if not velocity:
         return None
     survey, product, method = row["survey"], row["product"], velocity["method"]
-    floor = FLOORS.get((survey, product, method))
+    floor = FOURMOST_FLOORS.get(product) if survey == "fourmost" else FLOORS.get((survey, product, method))
     if floor is None or not quality_passes(row):
         return None
     mjd, snr = row.get("mjd"), row.get("snr")
@@ -100,13 +107,14 @@ def normalize(row, min_snr):
         if not coadd:
             # LAMOST's LMJM is in local time (UTC+8), with one-minute resolution.
             mjd = int(epoch.rsplit(":", 1)[-1]) / 1440 - 8 / 24
-    if survey == "desi":
+    if survey in {"desi", "fourmost"}:
         epoch = str(row["exposure_id"])
         family = epoch
     pipeline = ":".join((survey, row["release"], product, method))
     visit = {
         "id": row["_id"], "ra": row["ra"], "dec": row["dec"],
         "mjd": mjd, "snr": snr, "rv_km_s": value, "rv_error_km_s": error,
+        "exptime_s": row.get("exptime_s"), "rv_frame": velocity.get("frame"),
         "effective_error_km_s": math.hypot(error, floor), "spectrum": row.get("spectrum"),
     }
     return (row["_id"], native, gaia, pipeline, family, epoch, int(coadd),
@@ -117,6 +125,8 @@ def metadata_rows(manifest_path, footprint):
     if footprint:
         with gzip.open(footprint, "rt") as stream:
             yield from map(json.loads, stream)
+        return
+    if manifest_path is None:
         return
     manifest = json.loads(manifest_path.read_text())
     if manifest.get("format_version") != 1 or "jobs" not in manifest:
@@ -218,7 +228,9 @@ def search(args):
         """)
 
         def usable():
-            for row in metadata_rows(args.manifest, args.footprint):
+            visits = itertools.chain(metadata_rows(args.manifest, args.footprint),
+                                     *(fourmost_visits(path) for path in getattr(args, "fourmost_visits", [])))
+            for row in visits:
                 stats["input_rows"] += 1
                 if args.survey and row["survey"] not in args.survey:
                     continue
@@ -249,17 +261,21 @@ def search(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument("--manifest", type=Path, help="Completed --all importer manifest")
     inputs.add_argument("--footprint", type=Path, help="Compressed test footprint metadata")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scratch-dir", type=Path)
-    parser.add_argument("--survey", choices=("lamost", "sdss", "desi"), action="append")
+    parser.add_argument("--survey", choices=("lamost", "sdss", "desi", "fourmost"), action="append")
+    parser.add_argument("--fourmost-visits", type=Path, action="append", default=[],
+                        help="Normalized public 4MOST visit CSV, standalone or alongside an archive input")
     parser.add_argument("--min-delta-km-s", type=float, default=30.0)
     parser.add_argument("--min-sigma", type=float, default=5.0)
     parser.add_argument("--min-snr", type=float, default=5.0)
     parser.add_argument("--min-baseline-days", type=float, default=0.0)
     args = parser.parse_args()
+    if not (args.manifest or args.footprint or args.fourmost_visits):
+        parser.error("Provide --manifest, --footprint, or --fourmost-visits")
     thresholds = (args.min_delta_km_s, args.min_sigma, args.min_snr, args.min_baseline_days)
     if not all(math.isfinite(value) and value >= 0 for value in thresholds):
         parser.error("Thresholds must be finite and non-negative")
