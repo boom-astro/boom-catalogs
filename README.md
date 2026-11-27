@@ -126,9 +126,36 @@ the search never fetches spectral pixels. The default discovery cuts are
 30 km/s, five nominal sigma, and S/N 5. The nominal significance includes
 conservative per-pipeline error floors and is a ranking statistic, with no
 correction for the number of tested pairs. Confirm candidates on the spectra.
-Comparisons stay within a release and pipeline because cross-instrument RV zero
-points have not been fit. Use `--footprint` instead of `--manifest` for a
+By default, comparisons stay within a release and pipeline. Use the optional
+calibration workflow below for cross-survey pairs. Use `--footprint` instead of `--manifest` for a
 local test, and inspect `--help` for alternate thresholds or survey selection.
+
+#### Calibrate cross-pipeline pairs
+
+Fit a calibration to Gaia DR3-matched stars with at least two independent
+visits in each pipeline. Use published RV standards where possible via
+`--control-ids` (a whitespace-delimited list of Gaia DR3 source IDs).
+The fitter splits on Gaia ID, fits the median B-minus-A offset and robust
+scatter, and checks residuals on the held-out stars. By default it requires
+30 training and 10 holdout controls. Confirm the frame conventions before
+fitting. Selecting `survey_native` explicitly retains the archive-native
+conventions for an exploratory comparison.
+
+```bash
+python downloaders/search_archival_rv.py --manifest archival-spectra/manifest.json \
+  --fit-cross-pipeline lamost:dr12-v2.0:mrs:LAMOST_MRS_BR1 sdss:dr20:boss:BOSSNet \
+  --rv-frames survey_native survey_native --output mrs-boss-calibration.json
+python downloaders/search_archival_rv.py --manifest archival-spectra/manifest.json \
+  --cross-pipeline-calibration mrs-boss-calibration.json --output candidates-v1.jsonl.gz
+```
+
+A calibration is specific to its two release and pipeline IDs, frame labels,
+and minimum S/N. Raw and corrected signed shifts are retained. The score
+includes both per-visit uncertainties, the offset uncertainty, and calibration
+scatter. Only Gaia DR3-matched visits from different surveys enter this
+comparison. The output ranks `same_pipeline` and `cross_pipeline` separately.
+Use the exact visit IDs to check whether a cross-pipeline candidate reuses an
+extreme visit from a same-pipeline result.
 
 #### Include 4MOST visits
 
